@@ -66,7 +66,7 @@ R and the `DNAcopy` Bioconductor package are installed at job start for CBS segm
 | `call_segments` | file | Integer CN calls (`.call.cns`) |
 | `scatter_png` | file | Genome-wide scatter plot (`.scatter.png`), y = ±3 |
 | `diagram_pdf` | file | Chromosome ideogram with gene labels (`.diagram.pdf`) |
-| `genemetrics` | file | Per-gene gain/loss summary (`.genemetrics.csv`) |
+| `genemetrics` | file | Per-gene gain/loss summary (`.genemetrics.tsv`) |
 
 ## How to run this app from the command line?
 
