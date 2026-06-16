@@ -3,9 +3,9 @@
   "title": "eggd_cgp-cnvkit-batch",
   "summary": "Per-sample CNVkit analysis: coverage, PoN normalisation, CBS segmentation, integer CN calling, scatter plot and gene metrics for one tumour-only CGP panel sample.",
   "dxapi": "1.0.0",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "properties": {
-    "githubRelease": "1.0.0"
+    "githubRelease": "2.0.1"
   },
   "inputSpec": [
     {
