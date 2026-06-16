@@ -9,33 +9,31 @@ main() {
     echo "=== CGP CNVkit batch: ${sample_id} ==="
     echo "Instance: $(hostname); CPUs: $(nproc)"
 
-    # ── Install cnvkit + R DNAcopy for CBS segmentation ───────────────────────
-    echo "[setup] Installing cnvkit..."
-    python3 -m venv /tmp/cnvkit-env
-    /tmp/cnvkit-env/bin/pip install cnvkit --quiet 2>&1 | tail -3
-    export PATH="/tmp/cnvkit-env/bin:$PATH"
-    cnvkit.py version
-
-    echo "[setup] Installing R DNAcopy for CBS segmentation..."
-    Rscript -e "
-        options(warn=-1)
-        if (!requireNamespace('BiocManager', quietly=TRUE))
-            install.packages('BiocManager', repos='https://cloud.r-project.org', quiet=TRUE)
-        if (!requireNamespace('DNAcopy', quietly=TRUE))
-            BiocManager::install('DNAcopy', ask=FALSE, quiet=TRUE)
-        cat('DNAcopy version:', as.character(packageVersion('DNAcopy')), '\n')
-    "
+    # ── Load CNVkit Docker image ──────────────────────────────────────────────
+    # Image stored in DNAnexus; no external internet required.
+    # Update CNVKIT_IMAGE_ID after running scripts/dnanexus/docker/cgp-cnvkit/build_and_upload.sh
+    CNVKIT_IMAGE_ID="project-Fkb6Gkj433GVVvj73J7x8KbV:file-J8j7Vyj45FG1BbK26JQgQY6q"   # cgp-cnvkit:1.0.0 — set after upload
+    CNVKIT_IMAGE_TAG="cgp-cnvkit:1.0.0"
+    echo "[setup] Loading CNVkit image..."
+    dx download "${CNVKIT_IMAGE_ID}" -o cnvkit-image.tar.gz
+    docker load < cnvkit-image.tar.gz
+    run_cnvkit() { docker run --rm -v "$(pwd)":/work -w /work "${CNVKIT_IMAGE_TAG}" cnvkit.py "$@"; }
+    run_cnvkit version
 
     # ── Stage inputs ──────────────────────────────────────────────────────────
     echo "[inputs] Downloading files..."
     dx download "${tumour_bam}"    -o tumour.bam
     dx download "${tumour_bai}"    -o tumour.bam.bai
     dx download "${baits}"         -o panel.bed
+
+    # Deduplicate BED intervals — some panel BEDs have identical coordinates
+    # from multiple transcript annotations; CNVkit 0.9.13+ raises on duplicates
+    awk '!seen[$1 FS $2 FS $3]++' panel.bed > panel.dedup.bed && mv panel.dedup.bed panel.bed
     dx download "${cn_reference}"  -o reference.cnn
 
     # ── Coverage (amplicon mode — panel BED directly, no autobin) ─────────────
     echo "[coverage] Computing on-target coverage..."
-    cnvkit.py coverage tumour.bam panel.bed \
+    run_cnvkit coverage tumour.bam panel.bed \
         --processes "$(nproc)" \
         --output "${sample_id}.targetcoverage.cnn"
 
@@ -48,7 +46,7 @@ main() {
     printf "chromosome\tstart\tend\tgene\tlog2\tdepth\tweight\n" \
         > empty.antitargetcoverage.cnn
 
-    cnvkit.py fix \
+    run_cnvkit fix \
         "${sample_id}.targetcoverage.cnn" \
         empty.antitargetcoverage.cnn \
         reference.cnn \
@@ -57,7 +55,7 @@ main() {
 
     # ── Segment: CBS ──────────────────────────────────────────────────────────
     echo "[segment] Running CBS segmentation..."
-    cnvkit.py segment \
+    run_cnvkit segment \
         "${sample_id}.cnr" \
         --method cbs \
         --drop-outliers 10 \
@@ -82,7 +80,7 @@ main() {
         echo "[call] No purity supplied — log2R thresholds only"
     fi
 
-    cnvkit.py call \
+    run_cnvkit call \
         "${sample_id}.cns" \
         ${CALL_ARGS} \
         -o "${sample_id}.call.cns"
@@ -95,7 +93,7 @@ main() {
     # Note: cnvkit.py scatter has no --sample-sex flag; chrX will appear at
     # log2R ≈ -1 for male samples due to mixed-gender PoN (cosmetic artefact).
     echo "[scatter] Generating scatter plot..."
-    cnvkit.py scatter \
+    run_cnvkit scatter \
         "${sample_id}.cnr" \
         -s "${sample_id}.cns" \
         --trend \
@@ -111,7 +109,7 @@ main() {
     echo "[diagram] Generating chromosome diagram..."
     SEX_ARG=""
     [ -n "${sample_sex:-}" ] && SEX_ARG="--sample-sex ${sample_sex}"
-    cnvkit.py diagram \
+    run_cnvkit diagram \
         "${sample_id}.cnr" \
         -s "${sample_id}.call.cns" \
         --threshold 0.5 \
@@ -123,7 +121,7 @@ main() {
 
     # ── Gene metrics ──────────────────────────────────────────────────────────
     echo "[genemetrics] Computing per-gene metrics..."
-    cnvkit.py genemetrics \
+    run_cnvkit genemetrics \
         "${sample_id}.cnr" \
         -s "${sample_id}.call.cns" \
         -t 0.3 \
