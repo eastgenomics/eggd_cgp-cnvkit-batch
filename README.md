@@ -66,7 +66,7 @@ R and the `DNAcopy` Bioconductor package are installed at job start for CBS segm
 | `call_segments` | file | Integer CN calls (`.call.cns`) |
 | `scatter_png` | file | Genome-wide scatter plot (`.scatter.png`), y = ±3 |
 | `diagram_pdf` | file | Chromosome ideogram with gene labels (`.diagram.pdf`) |
-| `genemetrics` | file | Per-gene gain/loss summary (`.genemetrics.csv`) |
+| `genemetrics` | file | Per-gene gain/loss summary (`.genemetrics.tsv`) |
 
 ## How to run this app from the command line?
 
@@ -88,24 +88,17 @@ dx run eggd_cgp-cnvkit-batch \
   -y
 ```
 
-Typical runtime: **20–25 min** on `mem1_ssd1_v2_x4` (dominated by R/DNAcopy install ~5 min
-and CBS segmentation ~10 min). All samples can be submitted simultaneously.
+Typical runtime: **15–20 min** on `mem1_ssd1_v2_x4` (dominated by CBS segmentation ~10 min).
+All samples can be submitted simultaneously.
 
 ## Dependencies
 
-**Python (CNVkit):** installed from PyPI at job start:
-```
-python3 -m venv /tmp/cnvkit-env
-/tmp/cnvkit-env/bin/pip install cnvkit
-```
+**Runtime environment:** pre-built Docker image (`cgp-cnvkit:1.0.0`) loaded from DNAnexus at job
+start (~15 s). No internet access required at runtime.
 
-**R (DNAcopy):** installed at job start for CBS segmentation:
-```r
-install.packages("BiocManager")
-BiocManager::install("DNAcopy")
-```
-
-CNVkit version: **0.9.13**. DNAcopy version: **1.76.0** (Bioconductor 3.18 / R 4.3).
+- **CNVkit:** `0.9.13` (git `fc65941d`), Python `3.12`, installed in `/opt/cnvkit` venv
+- **R / DNAcopy:** R `4.3.3` + DNAcopy `1.76.0` as pre-compiled Ubuntu 24.04 debs
+- **Base image:** `ubuntu:24.04`
 
 ## Known limitations
 

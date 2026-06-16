@@ -9,33 +9,41 @@ main() {
     echo "=== CGP CNVkit batch: ${sample_id} ==="
     echo "Instance: $(hostname); CPUs: $(nproc)"
 
-    # ── Install cnvkit + R DNAcopy for CBS segmentation ───────────────────────
-    echo "[setup] Installing cnvkit..."
-    python3 -m venv /tmp/cnvkit-env
-    /tmp/cnvkit-env/bin/pip install cnvkit --quiet 2>&1 | tail -3
-    export PATH="/tmp/cnvkit-env/bin:$PATH"
-    cnvkit.py version
-
-    echo "[setup] Installing R DNAcopy for CBS segmentation..."
-    Rscript -e "
-        options(warn=-1)
-        if (!requireNamespace('BiocManager', quietly=TRUE))
-            install.packages('BiocManager', repos='https://cloud.r-project.org', quiet=TRUE)
-        if (!requireNamespace('DNAcopy', quietly=TRUE))
-            BiocManager::install('DNAcopy', ask=FALSE, quiet=TRUE)
-        cat('DNAcopy version:', as.character(packageVersion('DNAcopy')), '\n')
-    "
+    # ── Load CNVkit Docker image ──────────────────────────────────────────────
+    # Image stored in DNAnexus; no external internet required.
+    # Update CNVKIT_IMAGE_ID after running scripts/dnanexus/docker/cgp-cnvkit/build_and_upload.sh
+    CNVKIT_IMAGE_ID="project-Fkb6Gkj433GVVvj73J7x8KbV:file-J8j7Vyj45FG1BbK26JQgQY6q"   # cgp-cnvkit:1.0.0 — set after upload
+    CNVKIT_IMAGE_TAG="cgp-cnvkit:1.0.0"
+    echo "[setup] Loading CNVkit image..."
+    dx download "${CNVKIT_IMAGE_ID}" -o cnvkit-image.tar.gz
+    docker load < cnvkit-image.tar.gz
+    run_cnvkit() { docker run --rm -v "$(pwd)":/work -w /work "${CNVKIT_IMAGE_TAG}" cnvkit.py "$@"; }
+    run_cnvkit version
 
     # ── Stage inputs ──────────────────────────────────────────────────────────
     echo "[inputs] Downloading files..."
     dx download "${tumour_bam}"    -o tumour.bam
     dx download "${tumour_bai}"    -o tumour.bam.bai
     dx download "${baits}"         -o panel.bed
+
+    # Sanity check: verify BAM and BAI filenames are a matched pair
+    BAM_NAME=$(dx describe "${tumour_bam}" --json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+    BAI_NAME=$(dx describe "${tumour_bai}" --json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+    if [[ "${BAI_NAME}" != "${BAM_NAME}.bai" && "${BAI_NAME}" != "${BAM_NAME%.bam}.bai" ]]; then
+        echo "ERROR: BAI filename '${BAI_NAME}' does not match BAM filename '${BAM_NAME}'"
+        echo "       Expected '${BAM_NAME}.bai' or '${BAM_NAME%.bam}.bai'"
+        exit 1
+    fi
+    echo "[inputs] BAM/BAI pair validated: ${BAM_NAME} / ${BAI_NAME}"
+
+    # Deduplicate BED intervals — some panel BEDs have identical coordinates
+    # from multiple transcript annotations; CNVkit 0.9.13+ raises on duplicates
+    awk '!seen[$1 FS $2 FS $3]++' panel.bed > panel.dedup.bed && mv panel.dedup.bed panel.bed
     dx download "${cn_reference}"  -o reference.cnn
 
     # ── Coverage (amplicon mode — panel BED directly, no autobin) ─────────────
     echo "[coverage] Computing on-target coverage..."
-    cnvkit.py coverage tumour.bam panel.bed \
+    run_cnvkit coverage tumour.bam panel.bed \
         --processes "$(nproc)" \
         --output "${sample_id}.targetcoverage.cnn"
 
@@ -48,7 +56,7 @@ main() {
     printf "chromosome\tstart\tend\tgene\tlog2\tdepth\tweight\n" \
         > empty.antitargetcoverage.cnn
 
-    cnvkit.py fix \
+    run_cnvkit fix \
         "${sample_id}.targetcoverage.cnn" \
         empty.antitargetcoverage.cnn \
         reference.cnn \
@@ -57,10 +65,11 @@ main() {
 
     # ── Segment: CBS ──────────────────────────────────────────────────────────
     echo "[segment] Running CBS segmentation..."
-    cnvkit.py segment \
+    run_cnvkit segment \
         "${sample_id}.cnr" \
         --method cbs \
         --drop-outliers 10 \
+        $([ "${drop_low_coverage:-true}" = "true" ] && echo "--drop-low-coverage") \
         --processes "$(nproc)" \
         -o "${sample_id}.cns"
 
@@ -82,7 +91,7 @@ main() {
         echo "[call] No purity supplied — log2R thresholds only"
     fi
 
-    cnvkit.py call \
+    run_cnvkit call \
         "${sample_id}.cns" \
         ${CALL_ARGS} \
         -o "${sample_id}.call.cns"
@@ -95,15 +104,15 @@ main() {
     # Note: cnvkit.py scatter has no --sample-sex flag; chrX will appear at
     # log2R ≈ -1 for male samples due to mixed-gender PoN (cosmetic artefact).
     echo "[scatter] Generating scatter plot..."
-    cnvkit.py scatter \
+    run_cnvkit scatter \
         "${sample_id}.cnr" \
         -s "${sample_id}.cns" \
         --trend \
         --y-min -3 --y-max 3 \
         --fig-size 14 4 \
         --title "${sample_id}" \
-        -o "${sample_id}.scatter.png" 2>/dev/null || \
-    echo "[scatter] WARNING: scatter plot failed (non-fatal)"
+        -o "${sample_id}.scatter.png" 2>/tmp/scatter_err.txt || \
+    echo "[scatter] WARNING: scatter plot failed (non-fatal): $(cat /tmp/scatter_err.txt | tail -1)"
 
     # ── Diagram plot (chromosome ideogram with gene labels) ───────────────────
     # --sample-sex corrects chrX/Y baseline for the given sex.
@@ -111,33 +120,33 @@ main() {
     echo "[diagram] Generating chromosome diagram..."
     SEX_ARG=""
     [ -n "${sample_sex:-}" ] && SEX_ARG="--sample-sex ${sample_sex}"
-    cnvkit.py diagram \
+    run_cnvkit diagram \
         "${sample_id}.cnr" \
         -s "${sample_id}.call.cns" \
         --threshold 0.5 \
         --min-probes 3 \
         ${SEX_ARG} \
         --title "${sample_id}" \
-        -o "${sample_id}.diagram.pdf" 2>/dev/null || \
-    echo "[diagram] WARNING: diagram failed (non-fatal)"
+        -o "${sample_id}.diagram.pdf" 2>/tmp/diagram_err.txt || \
+    echo "[diagram] WARNING: diagram failed (non-fatal): $(cat /tmp/diagram_err.txt | tail -1)"
 
     # ── Gene metrics ──────────────────────────────────────────────────────────
     echo "[genemetrics] Computing per-gene metrics..."
-    cnvkit.py genemetrics \
+    run_cnvkit genemetrics \
         "${sample_id}.cnr" \
         -s "${sample_id}.call.cns" \
         -t 0.3 \
         --min-probes 3 \
-        -o "${sample_id}.genemetrics.csv"
+        -o "${sample_id}.genemetrics.tsv"
 
-    N_GENES=$(wc -l < "${sample_id}.genemetrics.csv")
+    N_GENES=$(wc -l < "${sample_id}.genemetrics.tsv")
     echo "[genemetrics] Genes with CN change (threshold 0.3): $((N_GENES - 1))"
 
     # ── Upload outputs ────────────────────────────────────────────────────────
     copy_ratios=$(dx   upload "${sample_id}.cnr"             --brief)
     segments=$(dx      upload "${sample_id}.cns"             --brief)
     call_segments=$(dx upload "${sample_id}.call.cns"        --brief)
-    genemetrics=$(dx   upload "${sample_id}.genemetrics.csv" --brief)
+    genemetrics=$(dx   upload "${sample_id}.genemetrics.tsv" --brief)
 
     dx-jobutil-add-output copy_ratios   "${copy_ratios}"   --class=file
     dx-jobutil-add-output segments      "${segments}"      --class=file

@@ -3,23 +3,28 @@
   "title": "eggd_cgp-cnvkit-batch",
   "summary": "Per-sample CNVkit analysis: coverage, PoN normalisation, CBS segmentation, integer CN calling, scatter plot and gene metrics for one tumour-only CGP panel sample.",
   "dxapi": "1.0.0",
-  "version": "1.0.0",
+  "version": "2.0.1",
   "properties": {
-    "githubRelease": "1.0.0"
+    "githubRelease": "2.0.1"
   },
   "inputSpec": [
     {
       "name": "tumour_bam",
       "class": "file",
       "label": "Tumour BAM",
-      "patterns": ["*.bam"],
+      "patterns": [
+        "*.bam"
+      ],
       "help": "Mapped reads for the tumour sample. Chr-prefix chromosome names expected."
     },
     {
       "name": "tumour_bai",
       "class": "file",
       "label": "Tumour BAM index",
-      "patterns": ["*.bai", "*.bam.bai"],
+      "patterns": [
+        "*.bai",
+        "*.bam.bai"
+      ],
       "help": "BAM index corresponding to tumour_bam."
     },
     {
@@ -32,14 +37,18 @@
       "name": "cn_reference",
       "class": "file",
       "label": "CNVkit PoN reference (.cnn)",
-      "patterns": ["*.cnn"],
+      "patterns": [
+        "*.cnn"
+      ],
       "help": "PoN reference file produced by eggd_cgp-cnvkit-pon. Must have been built from coverage files generated with the same BED and target_avg_size."
     },
     {
       "name": "baits",
       "class": "file",
       "label": "Gene panel BED",
-      "patterns": ["*.bed"],
+      "patterns": [
+        "*.bed"
+      ],
       "help": "Target intervals in BED format. Must be identical to the BED used to build the PoN reference. Chr-prefix chromosome names required."
     },
     {
@@ -53,9 +62,9 @@
     {
       "name": "purity",
       "class": "float",
-      "label": "Tumour purity (0–1)",
+      "label": "Tumour purity (0\u20131)",
       "optional": true,
-      "help": "Estimated tumour purity from PURPLE or another purity tool. When supplied and purity > 0.40, used for absolute integer CN calling (cnvkit.py call --purity). At purity ≤ 0.40, PURPLE's purity estimate is unreliable for WGD samples in FFPE cohorts; log2R threshold calling is used instead. If omitted, log2R thresholds are used for all calls."
+      "help": "Estimated tumour purity from PURPLE or another purity tool. When supplied and purity > 0.40, used for absolute integer CN calling (cnvkit.py call --purity). At purity \u2264 0.40, PURPLE's purity estimate is unreliable for WGD samples in FFPE cohorts; log2R threshold calling is used instead. If omitted, log2R thresholds are used for all calls."
     },
     {
       "name": "ploidy",
@@ -63,14 +72,14 @@
       "label": "Tumour ploidy (rounded to nearest integer)",
       "default": 2,
       "optional": true,
-      "help": "Estimated tumour ploidy from PURPLE. Used alongside purity for integer CN calling. Ignored if purity is not supplied or purity ≤ 0.40."
+      "help": "Estimated tumour ploidy from PURPLE. Used alongside purity for integer CN calling. Ignored if purity is not supplied or purity \u2264 0.40."
     },
     {
       "name": "sample_sex",
       "class": "string",
       "label": "Sample chromosomal sex (male or female)",
       "optional": true,
-      "help": "Chromosomal sex of the sample. Used to correct the chrX/Y baseline in the diagram plot (cnvkit.py diagram --sample-sex). If omitted, CNVkit guesses from chrX/Y coverage. Note: cnvkit.py scatter does not support sex correction — male samples will show a chrX band at log2R ≈ -1 due to the mixed-gender PoN median."
+      "help": "Chromosomal sex of the sample. Used to correct the chrX/Y baseline in the diagram plot (cnvkit.py diagram --sample-sex). If omitted, CNVkit guesses from chrX/Y coverage. Note: cnvkit.py scatter does not support sex correction \u2014 male samples will show a chrX band at log2R \u2248 -1 due to the mixed-gender PoN median."
     },
     {
       "name": "drop_low_coverage",
@@ -78,7 +87,7 @@
       "label": "Filter out very-low-coverage bins before segmentation",
       "default": true,
       "optional": true,
-      "help": "Removes bins with very low read depth before CBS segmentation. Recommended for FFPE samples. Default: true."
+      "help": "When true, bins with very low read depth are removed before CBS segmentation. Passed as --drop-low-coverage to cnvkit.py segment. Recommended for FFPE samples. Default: true."
     }
   ],
   "outputSpec": [
@@ -86,44 +95,57 @@
       "name": "copy_ratios",
       "class": "file",
       "label": "Log2 copy ratios per bin (.cnr)",
-      "patterns": ["*.cnr"],
+      "patterns": [
+        "*.cnr"
+      ],
       "help": "Per-bin log2 copy ratios after PoN normalisation. Input to downstream segmentation and visualisation."
     },
     {
       "name": "segments",
       "class": "file",
       "label": "CBS segments (.cns)",
-      "patterns": ["*.cns"],
+      "patterns": [
+        "*.cns"
+      ],
       "help": "CBS-segmented copy-number profile. One row per segment."
     },
     {
       "name": "call_segments",
       "class": "file",
       "label": "Integer CN calls (.call.cns)",
-      "patterns": ["*.call.cns"],
+      "patterns": [
+        "*.call.cns"
+      ],
       "help": "Segments annotated with integer copy-number calls. Purity/ploidy-corrected when purity > 0.40; log2R thresholds otherwise."
     },
     {
       "name": "scatter_png",
       "class": "file",
       "label": "Genome-wide scatter plot (.png)",
-      "patterns": ["*.scatter.png"],
-      "help": "Genome-wide log2 copy-ratio scatter plot. Y-axis clamped to ±3 so losses at -1 to -1.5 are legible alongside high-amplitude amplifications. Amplified segments are indicated by segment lines at the scale edge."
+      "optional": true,
+      "patterns": [
+        "*.scatter.png"
+      ],
+      "help": "Genome-wide log2 copy-ratio scatter plot. Y-axis clamped to \u00b13 so losses at -1 to -1.5 are legible alongside high-amplitude amplifications. Amplified segments are indicated by segment lines at the scale edge."
     },
     {
       "name": "diagram_pdf",
       "class": "file",
       "label": "Chromosome ideogram with gene labels (.pdf)",
-      "patterns": ["*.diagram.pdf"],
+      "patterns": [
+        "*.diagram.pdf"
+      ],
       "optional": true,
       "help": "Chromosome-level ideogram with gene labels at CN-change sites (threshold 0.5 log2R, minimum 3 probes). Sex-corrected when sample_sex is supplied."
     },
     {
       "name": "genemetrics",
       "class": "file",
-      "label": "Per-gene gain/loss metrics (.csv)",
-      "patterns": ["*.genemetrics.csv"],
-      "help": "Tab-separated gene-level summary: gene, log2R, depth, weight, CN, probes. Filtered to genes with |log2R| > 0.3 and ≥3 probes."
+      "label": "Per-gene gain/loss metrics (.tsv)",
+      "patterns": [
+        "*.genemetrics.tsv"
+      ],
+      "help": "Tab-separated gene-level summary: gene, log2R, depth, weight, CN, probes. Filtered to genes with |log2R| > 0.3 and \u22653 probes."
     }
   ],
   "runSpec": {
@@ -152,5 +174,8 @@
         }
       }
     }
+  },
+  "access": {
+    "allProjects": "VIEW"
   }
 }
