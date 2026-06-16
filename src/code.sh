@@ -26,6 +26,16 @@ main() {
     dx download "${tumour_bai}"    -o tumour.bam.bai
     dx download "${baits}"         -o panel.bed
 
+    # Sanity check: verify BAM and BAI filenames are a matched pair
+    BAM_NAME=$(dx describe "${tumour_bam}" --json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+    BAI_NAME=$(dx describe "${tumour_bai}" --json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
+    if [[ "${BAI_NAME}" != "${BAM_NAME}.bai" && "${BAI_NAME}" != "${BAM_NAME%.bam}.bai" ]]; then
+        echo "ERROR: BAI filename '${BAI_NAME}' does not match BAM filename '${BAM_NAME}'"
+        echo "       Expected '${BAM_NAME}.bai' or '${BAM_NAME%.bam}.bai'"
+        exit 1
+    fi
+    echo "[inputs] BAM/BAI pair validated: ${BAM_NAME} / ${BAI_NAME}"
+
     # Deduplicate BED intervals — some panel BEDs have identical coordinates
     # from multiple transcript annotations; CNVkit 0.9.13+ raises on duplicates
     awk '!seen[$1 FS $2 FS $3]++' panel.bed > panel.dedup.bed && mv panel.dedup.bed panel.bed
@@ -59,6 +69,7 @@ main() {
         "${sample_id}.cnr" \
         --method cbs \
         --drop-outliers 10 \
+        $([ "${drop_low_coverage:-true}" = "true" ] && echo "--drop-low-coverage") \
         --processes "$(nproc)" \
         -o "${sample_id}.cns"
 
@@ -100,8 +111,8 @@ main() {
         --y-min -3 --y-max 3 \
         --fig-size 14 4 \
         --title "${sample_id}" \
-        -o "${sample_id}.scatter.png" 2>/dev/null || \
-    echo "[scatter] WARNING: scatter plot failed (non-fatal)"
+        -o "${sample_id}.scatter.png" 2>/tmp/scatter_err.txt || \
+    echo "[scatter] WARNING: scatter plot failed (non-fatal): $(cat /tmp/scatter_err.txt | tail -1)"
 
     # ── Diagram plot (chromosome ideogram with gene labels) ───────────────────
     # --sample-sex corrects chrX/Y baseline for the given sex.
@@ -116,8 +127,8 @@ main() {
         --min-probes 3 \
         ${SEX_ARG} \
         --title "${sample_id}" \
-        -o "${sample_id}.diagram.pdf" 2>/dev/null || \
-    echo "[diagram] WARNING: diagram failed (non-fatal)"
+        -o "${sample_id}.diagram.pdf" 2>/tmp/diagram_err.txt || \
+    echo "[diagram] WARNING: diagram failed (non-fatal): $(cat /tmp/diagram_err.txt | tail -1)"
 
     # ── Gene metrics ──────────────────────────────────────────────────────────
     echo "[genemetrics] Computing per-gene metrics..."
@@ -126,16 +137,16 @@ main() {
         -s "${sample_id}.call.cns" \
         -t 0.3 \
         --min-probes 3 \
-        -o "${sample_id}.genemetrics.csv"
+        -o "${sample_id}.genemetrics.tsv"
 
-    N_GENES=$(wc -l < "${sample_id}.genemetrics.csv")
+    N_GENES=$(wc -l < "${sample_id}.genemetrics.tsv")
     echo "[genemetrics] Genes with CN change (threshold 0.3): $((N_GENES - 1))"
 
     # ── Upload outputs ────────────────────────────────────────────────────────
     copy_ratios=$(dx   upload "${sample_id}.cnr"             --brief)
     segments=$(dx      upload "${sample_id}.cns"             --brief)
     call_segments=$(dx upload "${sample_id}.call.cns"        --brief)
-    genemetrics=$(dx   upload "${sample_id}.genemetrics.csv" --brief)
+    genemetrics=$(dx   upload "${sample_id}.genemetrics.tsv" --brief)
 
     dx-jobutil-add-output copy_ratios   "${copy_ratios}"   --class=file
     dx-jobutil-add-output segments      "${segments}"      --class=file
