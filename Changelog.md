@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.0.1] - 2026-06-16
+
+### Fixed
+- Address review comments (nadia31415)
+- Correct genemetrics output file extension in README: `.csv` → `.tsv`
+
+## [2.0.0] - 2026-06-16
+
+### Changed
+- Replace per-job venv/pip + BiocManager install with pre-built Docker image (`cgp-cnvkit:1.0.0`, ubuntu:24.04 base); eliminates ~5 min install overhead and removes internet dependency at runtime
+- CNVkit updated to git SHA `fc65941d` (post-0.9.13): pomegranate dependency removed, HMM rewritten in pure numpy/scipy, Python 3.12/3.14 CI-tested
+- R / DNAcopy now installed as pre-compiled Ubuntu 24.04 debs inside Docker image
+
+### Added
+- BED interval deduplication before coverage step (`awk !seen`); guards against CNVkit ≥0.9.13 raising on duplicate genomic coordinates in panel BEDs
+- `authorizedUsers` and `developers` fields in `dxapp.json` (org-emee_1)
+- `allProjects` VIEW access in `dxapp.json`
+
+### Removed
+- `networkAccess` field from `dxapp.json` (no internet required at runtime)
+
 ## [1.0.0] - 2026-05-27
 
 ### Added
