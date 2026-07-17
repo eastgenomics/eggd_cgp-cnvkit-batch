@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.2] - 2026-07-17
+
+### Changed
+- `ploidy` input: `class` changed from `int` to `float`; label updated to "Tumour ploidy"; now accepts PURPLE's raw float output (e.g. 3.1) directly without manual rounding
+
+### Removed
+- `target_avg_size` input: was defined in `dxapp.json` but never used in `src/code.sh`; amplicon mode uses the panel BED directly and does not require bin-size specification
+
 ## [2.0.1] - 2026-06-16
 
 ### Fixed

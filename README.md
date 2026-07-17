@@ -51,9 +51,8 @@ R and the `DNAcopy` Bioconductor package are installed at job start for CBS segm
 | `sample_id` | string | ✅ | Output file stem |
 | `cn_reference` | file | ✅ | PoN reference from `eggd_cgp-cnvkit-pon` |
 | `baits` | file | ✅ | Gene panel BED (same as used for PoN build) |
-| `target_avg_size` | int | ➖ | Bin size in bp (default: 250; must match PoN) |
 | `purity` | float | ➖ | PURPLE purity (0–1); enables purity-corrected integer calling when > 0.40 |
-| `ploidy` | int | ➖ | PURPLE ploidy (nearest integer); used with purity (default: 2) |
+| `ploidy` | float | ➖ | PURPLE ploidy; accepts raw float output (e.g. 3.1); used with purity (default: 2) |
 | `sample_sex` | string | ➖ | `male` or `female`; corrects chrX/Y in diagram plot |
 | `drop_low_coverage` | boolean | ➖ | Filter very-low-coverage bins (default: true) |
 
@@ -77,9 +76,8 @@ dx run eggd_cgp-cnvkit-batch \
   -isample_id="25330S0047" \
   -icn_reference=file-xxxx \
   -ibaits=file-xxxx \
-  -itarget_avg_size=250 \
   -ipurity=0.79 \
-  -iploidy=2 \
+  -iploidy=3.1 \
   -isample_sex="male" \
   -idrop_low_coverage=true \
   --destination "project-xxxx:/cnvkit/results/25330S0047/" \
