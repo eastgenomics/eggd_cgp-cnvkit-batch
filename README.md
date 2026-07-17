@@ -37,7 +37,7 @@ R and the `DNAcopy` Bioconductor package are installed at job start for CBS segm
 
 | Condition | Integer calling method |
 |---|---|
-| `purity` not supplied | Log₂R thresholds (amp >1.0, gain >0.3, loss <-0.3, del <-1.0) |
+| `purity` not supplied | Log₂R thresholds (amp ≥0.7, gain ≥0.2, loss <−0.25, del <−1.1) — CNVkit `fc65941d` defaults |
 | `purity` ≤ 0.40 | Log₂R thresholds — PURPLE estimate unreliable for WGD at low purity |
 | `purity` > 0.40 | `cnvkit.py call --purity --ploidy` (absolute CN correction) |
 | NO_TUMOR sample | Log₂R thresholds — do not pass sentinel purity=1.0 |
