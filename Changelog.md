@@ -5,6 +5,7 @@
 ### Fixed
 - Address review comments (nadia31415)
 - Correct genemetrics output file extension in README: `.csv` → `.tsv`
+- Correct documented log₂R call thresholds in README to match CNVkit `fc65941d` defaults (amp ≥0.7, gain ≥0.2, loss <−0.25, del <−1.1); previous values were incorrect
 
 ## [2.0.0] - 2026-06-16
 
