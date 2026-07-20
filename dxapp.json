@@ -3,9 +3,9 @@
   "title": "eggd_cgp-cnvkit-batch",
   "summary": "Per-sample CNVkit analysis: coverage, PoN normalisation, CBS segmentation, integer CN calling, scatter plot and gene metrics for one tumour-only CGP panel sample.",
   "dxapi": "1.0.0",
-  "version": "2.0.1",
+  "version": "2.0.2",
   "properties": {
-    "githubRelease": "2.0.1"
+    "githubRelease": "2.0.2"
   },
   "inputSpec": [
     {
@@ -40,7 +40,7 @@
       "patterns": [
         "*.cnn"
       ],
-      "help": "PoN reference file produced by eggd_cgp-cnvkit-pon. Must have been built from coverage files generated with the same BED and target_avg_size."
+      "help": "PoN reference file produced by eggd_cgp-cnvkit-pon. Must have been built from coverage files generated with the same BED."
     },
     {
       "name": "baits",
@@ -52,14 +52,6 @@
       "help": "Target intervals in BED format. Must be identical to the BED used to build the PoN reference. Chr-prefix chromosome names required."
     },
     {
-      "name": "target_avg_size",
-      "class": "int",
-      "label": "Average on-target bin size (bp)",
-      "default": 250,
-      "optional": true,
-      "help": "Must match the setting used for coverage and PoN build. Default: 250 bp."
-    },
-    {
       "name": "purity",
       "class": "float",
       "label": "Tumour purity (0\u20131)",
@@ -68,11 +60,11 @@
     },
     {
       "name": "ploidy",
-      "class": "int",
-      "label": "Tumour ploidy (rounded to nearest integer)",
+      "class": "float",
+      "label": "Tumour ploidy",
       "default": 2,
       "optional": true,
-      "help": "Estimated tumour ploidy from PURPLE. Used alongside purity for integer CN calling. Ignored if purity is not supplied or purity \u2264 0.40."
+      "help": "Estimated tumour ploidy from PURPLE. Accepts PURPLE's raw float output (e.g. 3.1). Used alongside purity for integer CN calling. Ignored if purity is not supplied or purity \u2264 0.40."
     },
     {
       "name": "sample_sex",
