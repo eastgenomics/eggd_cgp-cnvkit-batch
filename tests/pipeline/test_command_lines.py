@@ -19,8 +19,8 @@ def v202_calls(segment_extra=("--drop-low-coverage",), call_extra=(), diagram_ex
     return [
         ["version"],
         ["coverage", "tumour.bam", "panel.bed", "--processes", "4", "--output", f"{S}.targetcoverage.cnn"],
-        ["fix", f"{S}.targetcoverage.cnn", "empty.antitargetcoverage.cnn", "reference.cnn", "--no-edge",
-         "-o", f"{S}.cnr"],
+        # DI-4096: edge correction on (no --no-edge), as the PoN was built
+        ["fix", f"{S}.targetcoverage.cnn", "empty.antitargetcoverage.cnn", "reference.cnn", "-o", f"{S}.cnr"],
         ["segment", f"{S}.cnr", "--method", "cbs", "--drop-outliers", "10", *segment_extra,
          "--processes", "4", "-o", f"{S}.cns"],
         ["call", f"{S}.cns", *call_extra, "-o", f"{S}.call.cns"],

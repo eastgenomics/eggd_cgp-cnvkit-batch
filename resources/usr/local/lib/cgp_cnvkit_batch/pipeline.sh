@@ -41,13 +41,13 @@ run_pipeline() {
     # ── Fix: apply PoN reference ──────────────────────────────────────────────
     echo "[fix] Applying PoN reference..."
     # cnvkit.py fix requires 3 positional args even in amplicon mode: target antitarget reference.
-    # Pass an empty antitarget .cnn (header only) as placeholder.
+    # Pass an empty antitarget .cnn (header only) as placeholder. Edge correction is on (DI-4096): the PoN is
+    # built with CNVkit's default edge correction, so reference and fix match.
     printf "chromosome\tstart\tend\tgene\tlog2\tdepth\tweight\n" > empty.antitargetcoverage.cnn
     run_cnvkit fix \
         "${s}.targetcoverage.cnn" \
         empty.antitargetcoverage.cnn \
         reference.cnn \
-        --no-edge \
         -o "${s}.cnr"
 
     # ── Segment: CBS ──────────────────────────────────────────────────────────
