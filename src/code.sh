@@ -48,6 +48,7 @@ main() {
     PURITY="${purity:-}" \
     PLOIDY="${ploidy:-}" \
     DROP_LOW_COVERAGE="${drop_low_coverage:-true}" \
+    DROPOUT_MASK="${dropout_mask:-true}" \
         run_pipeline
 
     # ── Upload outputs ────────────────────────────────────────────────────────

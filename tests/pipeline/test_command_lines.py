@@ -17,11 +17,12 @@ S = SAMPLE
 IMAGE = "cgp-cnvkit:1.0.0"
 
 
-def expected_calls(parx=False, sex="male", s=None, segment_extra=("--drop-low-coverage",)):
+def expected_calls(parx=False, sex="male", s=None, segment_extra=("--drop-low-coverage",), mask=True):
     """The full CNVkit call sequence for a sample (default S, LIMS M), with --processes from the stubbed nproc (4).
 
     parx: diploid_parx_genome=grch38 (DI-4097): --diploid-parx-genome on fix, segment, call, diagram, genemetrics.
     sex:  the applied sex (DI-4100): -x on call, diagram and genemetrics; None = no -x (CNVkit infers).
+    mask: dropout_mask (DI-4139): segment reads <s>.seg_input.cnr; every other step reads the unmasked <s>.cnr.
     """
     S = s or SAMPLE
     px = ("--diploid-parx-genome", "grch38") if parx else ()
@@ -31,7 +32,7 @@ def expected_calls(parx=False, sex="male", s=None, segment_extra=("--drop-low-co
         ["coverage", "tumour.bam", "panel.bed", "--processes", "4", "--output", f"{S}.targetcoverage.cnn"],
         # DI-4096: edge correction on (no --no-edge), as the PoN was built
         ["fix", f"{S}.targetcoverage.cnn", "empty.antitargetcoverage.cnn", "reference.cnn", *px, "-o", f"{S}.cnr"],
-        ["segment", f"{S}.cnr", "--method", "cbs", "--drop-outliers", "10", *segment_extra, *px,
+        ["segment", f"{S}.seg_input.cnr" if mask else f"{S}.cnr", "--method", "cbs", "--drop-outliers", "10", *segment_extra, *px,
          "--processes", "4", "-o", f"{S}.cns"],
         # DI-4102: sex checks on raw coverage (chrY presence) and on the .cnr (chrX; post-step decision)
         ["sex", f"{S}.targetcoverage.cnn", *px, "-o", f"{S}.sex_raw.tsv"],
@@ -126,6 +127,58 @@ def test_sample_sex_deprecated_and_ignored(tmp_path):
     assert run.returncode == 0, run.stderr
     assert run.cnvkit == expected_calls(sex=None, s=U_SAMPLE)
     assert "[deprecated] sample_sex supplied but ignored" in run.stdout
+
+
+# ── DI-4139: dropout mask (D7) ───────────────────────────────────────────────
+
+QC_HEADER = "arm\tchromosome\tstart\tend\tgene\tlog2\traw_reads\treason\n"
+
+
+def masked_fixtures(tmp_path):
+    """A .cnr with one isolated deep autosomal probe (0 reads) and a deep chrX probe (never masked)."""
+    cnr = tmp_path / "fix.cnr"
+    cnr.write_text("chromosome\tstart\tend\tgene\tlog2\tdepth\tweight\n"
+                   "chr12\t11873311\t11873583\tETV6\t-0.95\t292.4\t0.886\n"
+                   "chr12\t11873583\t11873855\tETV6\t-28.7962\t0\t0.743\n"
+                   "chr12\t11873855\t11874127\tETV6\t0.1\t300\t0.9\n"
+                   "chrX\t5000000\t5000144\tXGENE\t-20\t0\t0.5\n")
+    cnn = tmp_path / "coverage.cnn"
+    cnn.write_text("chromosome\tstart\tend\tgene\tdepth\tlog2\n"
+                   "chr12\t11873311\t11873583\tETV6\t292.4\t8.2\n"
+                   "chr12\t11873583\t11873855\tETV6\t0\t-20\n"
+                   "chr12\t11873855\t11874127\tETV6\t300\t8.2\n"
+                   "chrX\t5000000\t5000144\tXGENE\t0\t-20\n")
+    return {"STUB_OUTPUT_FIX": str(cnr), "STUB_OUTPUT_COVERAGE": str(cnn)}
+
+
+def test_dropout_mask_default_on(tmp_path):
+    run = run_app(tmp_path, stub_env=masked_fixtures(tmp_path))
+    assert run.returncode == 0, run.stderr
+    assert run.cnvkit == expected_calls(mask=True)
+    seg_input = (run.workdir / f"{S}.seg_input.cnr").read_text().splitlines()
+    assert seg_input[2].split("\t")[6] == "0"                       # the isolated ETV6 probe: weight 0
+    assert [r.split("\t")[6] for r in seg_input[1:]] == ["0.886", "0", "0.9", "0.5"]
+    # the .cnr every other step reads (and copy_ratios) is the unmasked file
+    assert (run.workdir / f"{S}.cnr").read_text() == open(masked_fixtures(tmp_path)["STUB_OUTPUT_FIX"]).read()
+    assert (run.workdir / f"{S}.dropout_qc.tsv").read_text() == (
+        QC_HEADER + "M\tchr12\t11873583\t11873855\tETV6\t-28.7962\t0.0\tisolated_run1\n")
+    assert "[dropout] masked probes: 1" in run.stdout
+
+
+def test_dropout_mask_off(tmp_path):
+    run = run_app(tmp_path, {"dropout_mask": False}, stub_env=masked_fixtures(tmp_path))
+    assert run.returncode == 0, run.stderr
+    assert run.cnvkit == expected_calls(mask=False)
+    assert not (run.workdir / f"{S}.seg_input.cnr").exists()
+    assert (run.workdir / f"{S}.dropout_qc.tsv").read_text() == QC_HEADER
+    assert "[dropout] dropout_mask=false" in run.stdout
+
+
+def test_only_segment_reads_the_masked_file(tmp_path):
+    run = run_app(tmp_path)
+    assert run.returncode == 0, run.stderr
+    readers = [c[0] for c in run.cnvkit if any(a.endswith(".seg_input.cnr") for a in c)]
+    assert readers == ["segment"]
 
 
 def test_ploidy_has_no_default():

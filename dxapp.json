@@ -96,6 +96,14 @@
       "default": true,
       "optional": true,
       "help": "When true, bins with very low read depth are removed before CBS segmentation. Passed as --drop-low-coverage to cnvkit.py segment. Recommended for FFPE samples. Default: true."
+    },
+    {
+      "name": "dropout_mask",
+      "class": "boolean",
+      "label": "Mask isolated probe dropouts before segmentation",
+      "default": true,
+      "optional": true,
+      "help": "When true (default; validated, DI-4139), isolated autosomal probe dropouts are given weight 0 in the segmentation input only: log2 < -3, in a run of at most 2 adjacent deep probes, with fewer than 10 raw read-equivalents (depth x length / 144). chrX/chrY are never masked. Every other step and the copy_ratios output use the unmasked .cnr. The masked probes are listed in dropout_qc. False reproduces the v2.0.x segmentation (for troubleshooting and the equivalence test)."
     }
   ],
   "outputSpec": [

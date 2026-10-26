@@ -17,10 +17,11 @@
 #     SEX_OVERRIDE        male | female | M | F | '' (DI-4099, D9): wins over the LIMS letter
 #     SAMPLE_SEX_DEPRECATED  the old sample_sex input (wired from PURPLE): ignored, with a warning (D2)
 #     DROP_LOW_COVERAGE   true (default) | false
+#     DROPOUT_MASK        true (default) | false (DI-4139, D7): segment on the dropout-masked copy of the .cnr
 #   outputs (files in the current directory)
 #     <SAMPLE_ID>.targetcoverage.cnn .cnr .cns .call.cns .genemetrics.tsv, and .scatter.png / .diagram.pdf when
 #     the (non-fatal) plots succeed
-#   outputs (shell variables)  N_SEGS, N_GENES, SEX_ARG, SEX_SOURCE, LIMS_SEX
+#   outputs (shell variables)  N_SEGS, N_GENES, SEX_ARG, SEX_SOURCE, LIMS_SEX, DROPOUT_PROBES
 
 dedup_bed() {
     # Deduplicate BED intervals: some panel BEDs have identical coordinates from multiple transcript
@@ -93,12 +94,28 @@ run_pipeline() {
         "${px[@]}" \
         -o "${s}.cnr"
 
+    # ── Dropout mask (DI-4139) ────────────────────────────────────────────────
+    # Isolated autosomal probe dropouts (log2 < -3, run of <= 2, < 10 raw read-equivalents) get weight 0 in a
+    # copy of the .cnr that only segment reads; every other step reads the unmasked <s>.cnr.
+    local seg_in="${s}.cnr"
+    if [ "${DROPOUT_MASK:-true}" = "true" ]; then
+        dropout_mask.py mask M "${s}.cnr" "${s}.targetcoverage.cnn" "${s}" - \
+            "${s}.seg_input.cnr" "${s}.dropout_qc.tsv" > /dev/null
+        seg_in="${s}.seg_input.cnr"
+        DROPOUT_PROBES=$(( $(wc -l < "${s}.dropout_qc.tsv") - 1 ))
+        echo "[dropout] masked probes: ${DROPOUT_PROBES} (listed in ${s}.dropout_qc.tsv)"
+    else
+        dropout_mask.py qc-header "${s}.dropout_qc.tsv"
+        DROPOUT_PROBES=0
+        echo "[dropout] dropout_mask=false: segment reads the unmasked .cnr (v2.0.x segmentation)"
+    fi
+
     # ── Segment: CBS ──────────────────────────────────────────────────────────
-    echo "[segment] Running CBS segmentation..."
+    echo "[segment] Running CBS segmentation on ${seg_in}..."
     local -a seg_args=()
     [ "${DROP_LOW_COVERAGE:-true}" = "true" ] && seg_args+=(--drop-low-coverage)
     run_cnvkit segment \
-        "${s}.cnr" \
+        "${seg_in}" \
         --method cbs \
         --drop-outliers 10 \
         "${seg_args[@]}" \
