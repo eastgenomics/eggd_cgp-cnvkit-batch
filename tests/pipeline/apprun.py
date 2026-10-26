@@ -106,3 +106,27 @@ def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/
         outputs={o["name"]: {"value": o["value"], "class": o["class"]} for o in jsonl("outputs.jsonl")},
         uploads=[u["name"] for u in jsonl("uploads.jsonl")],
     )
+
+
+def run_pipeline_direct(tmp_path, env, files=None, stub_env=None):
+    """Source pipeline.sh and call run_pipeline directly (no code.sh), with the docker stub as run_cnvkit.
+
+    env: the pipeline's environment (SAMPLE_ID, START_FROM, ...); files: {name: content} written to the work dir.
+    """
+    work, log = tmp_path / "work", tmp_path / "log"
+    work.mkdir()
+    log.mkdir()
+    for name, content in (files or {}).items():
+        (work / name).write_text(content)
+    lib = REPO / "resources" / "usr" / "local" / "lib" / "cgp_cnvkit_batch" / "pipeline.sh"
+    full_env = {"PATH": f"{STUBS}:{REPO / 'resources' / 'usr' / 'local' / 'bin'}:{os.environ['PATH']}",
+                "HOME": str(tmp_path), "LC_ALL": "C.UTF-8", "STUB_LOG": str(log), **(stub_env or {}), **env}
+    script = ('set -eo pipefail; source "$1"; '
+              'run_cnvkit() { docker run --rm -v "$(pwd)":/work -w /work cgp-cnvkit:1.0.0 cnvkit.py "$@"; }; '
+              'run_pipeline')
+    proc = subprocess.run(["bash", "-c", script, "pipeline", str(lib)], cwd=work, env=full_env,
+                          capture_output=True, text=True, timeout=120)
+    docker = [json.loads(line) for line in (log / "docker.jsonl").read_text().splitlines()] \
+        if (log / "docker.jsonl").exists() else []
+    return AppRun(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr, workdir=work, docker=docker,
+                  dx=[], outputs={}, uploads=[])

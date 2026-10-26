@@ -11,6 +11,8 @@
 #   inputs (environment)
 #     SAMPLE_ID           output file stem (required)
 #     NPROC               CPUs for coverage/segment (default: nproc)
+#     START_FROM          bam (default) | coverage: start from an existing <SAMPLE_ID>.targetcoverage.cnn (no BAM or
+#                         BED needed; the local harness uses it to start from the validated coverage)
 #     DIPLOID_PARX_GENOME grch38 | '' (DI-4097): --diploid-parx-genome on fix, segment, call, genemetrics, diagram
 #     PURITY, PLOIDY      deprecated (DI-4121, D4): ignored, with a warning when supplied
 #     BAM_NAME            BAM file name: LIMS-letter fallback when SAMPLE_ID has no 5th field (DI-4098)
@@ -76,13 +78,20 @@ run_pipeline() {
         echo "[deprecated] --purity/--ploidy, as validated; PURPLE is the source of absolute copy number."
     fi
 
-    dedup_bed panel.bed
-
     # ── Coverage (amplicon mode — panel BED directly, no autobin) ─────────────
-    echo "[coverage] Computing on-target coverage..."
-    run_cnvkit coverage tumour.bam panel.bed \
-        --processes "${nproc}" \
-        --output "${s}.targetcoverage.cnn"
+    if [ "${START_FROM:-bam}" = "coverage" ]; then
+        if [ ! -s "${s}.targetcoverage.cnn" ]; then
+            echo "ERROR: START_FROM=coverage but ${s}.targetcoverage.cnn is missing"
+            return 1
+        fi
+        echo "[coverage] START_FROM=coverage: using the existing ${s}.targetcoverage.cnn"
+    else
+        dedup_bed panel.bed
+        echo "[coverage] Computing on-target coverage..."
+        run_cnvkit coverage tumour.bam panel.bed \
+            --processes "${nproc}" \
+            --output "${s}.targetcoverage.cnn"
+    fi
 
     # ── Fix: apply PoN reference ──────────────────────────────────────────────
     echo "[fix] Applying PoN reference..."

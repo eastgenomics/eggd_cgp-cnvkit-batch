@@ -41,6 +41,7 @@ main() {
 
     # ── Analysis ──────────────────────────────────────────────────────────────
     SAMPLE_ID="${sample_id}" \
+    START_FROM=bam \
     DIPLOID_PARX_GENOME="${diploid_parx_genome:-}" \
     BAM_NAME="${BAM_NAME}" \
     SEX_OVERRIDE="${sex_override:-}" \

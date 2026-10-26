@@ -331,6 +331,32 @@ def test_missing_output_file_fails_the_job(tmp_path):
     assert "sex_qc" not in run.outputs
 
 
+def test_start_from_coverage(tmp_path):
+    from apprun import run_pipeline_direct
+    cnn = "chromosome\tstart\tend\tgene\tdepth\tlog2\nchr1\t100\t200\tGENE1\t500.0\t9.0\n"
+    run = run_pipeline_direct(tmp_path, {"SAMPLE_ID": S, "START_FROM": "coverage", "NPROC": "4",
+                                         "DIPLOID_PARX_GENOME": "grch38"},
+                              files={f"{S}.targetcoverage.cnn": cnn, "reference.cnn": "stub\n"})
+    assert run.returncode == 0, run.stdout + run.stderr
+    assert run.cnvkit == expected_calls(parx=True, parfix=True)[2:]      # no version, no coverage
+    assert (run.workdir / f"{S}.targetcoverage.cnn").read_text() == cnn
+    assert not (run.workdir / "panel.bed").exists()
+
+
+def test_start_from_coverage_needs_the_file(tmp_path):
+    from apprun import run_pipeline_direct
+    run = run_pipeline_direct(tmp_path, {"SAMPLE_ID": S, "START_FROM": "coverage"}, files={"reference.cnn": "x\n"})
+    assert run.returncode != 0 and "targetcoverage.cnn is missing" in run.stdout
+    assert run.cnvkit == []
+
+
+def test_code_sh_always_starts_from_the_bam(tmp_path):
+    # a stray START_FROM in the job environment must not skip coverage
+    run = run_app(tmp_path, stub_env={"START_FROM": "coverage"})
+    assert run.returncode == 0, run.stderr
+    assert run.subcommand("coverage")
+
+
 def test_version():
     from apprun import DXAPP
     assert DXAPP["version"] == "2.1.0" and DXAPP["properties"]["githubRelease"] == "2.1.0"
