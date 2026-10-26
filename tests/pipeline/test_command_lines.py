@@ -240,7 +240,7 @@ def test_parfix_decision(tmp_path, sample, cnr_sex, override, applied):
     if applied:
         rerun = run.docker[-1]                                     # the genemetrics re-run is the last call
         assert rerun["cmd"][1] == "genemetrics"
-        assert rerun["options"] == ["--rm", "-v", f"{w / 'parfix'}:/work", "-w", "/work"]
+        assert rerun["options"] == docker_options(w / "parfix")
         assert (w / "parfix" / f"{sample}.cnr").exists() and (w / "parfix" / f"{sample}.call.cns").exists()
         assert "par_check=1" in run.stdout
 
@@ -403,12 +403,20 @@ def test_parx_rejects_other_values(tmp_path):
     assert run.cnvkit == [["version"]]
 
 
+def docker_options(workdir):
+    """CNVkit runs as the executor's user, so the host can overwrite container-written files (PAR post-step);
+    HOME and the Matplotlib cache point at a writable directory for a non-root user."""
+    import os
+    return ["--rm", "--user", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp", "-e", "MPLCONFIGDIR=/tmp",
+            "-v", f"{workdir}:/work", "-w", "/work"]
+
+
 def test_docker_invocation(tmp_path):
     run = run_app(tmp_path)
     assert run.returncode == 0, run.stderr
     assert {d["image"] for d in run.docker} == {IMAGE}
     for d in run.docker:
-        assert d["options"] == ["--rm", "-v", f"{run.workdir}:/work", "-w", "/work"]
+        assert d["options"] == docker_options(run.workdir)
     # the image is loaded from its pinned DNAnexus file
     assert ["download", "project-Fkb6Gkj433GVVvj73J7x8KbV:file-J8j7Vyj45FG1BbK26JQgQY6q",
             "-o", "cnvkit-image.tar.gz"] in run.dx

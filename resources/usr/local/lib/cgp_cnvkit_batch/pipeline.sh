@@ -212,7 +212,7 @@ run_pipeline() {
         checked=$(cnvkit_parfix.py compare "${s}.genemetrics.noparfix.tsv" "parfix/${s}.genemetrics.tsv" \
             "${s}.call.cns")
         echo "[parfix] ${checked}"
-        cp "parfix/${s}.genemetrics.tsv" "${s}.genemetrics.tsv"
+        cp -f "parfix/${s}.genemetrics.tsv" "${s}.genemetrics.tsv"
     else
         echo "[parfix] not applied: $(cut -f2 <<< "${decision}")"
     fi

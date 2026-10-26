@@ -26,7 +26,12 @@ main() {
     echo "[setup] Loading CNVkit image..."
     dx download "${CNVKIT_IMAGE_ID}" -o cnvkit-image.tar.gz
     docker load < cnvkit-image.tar.gz
-    run_cnvkit() { docker run --rm -v "$(pwd)":/work -w /work "${CNVKIT_IMAGE_TAG}" cnvkit.py "$@"; }
+    # CNVkit runs as the executor's user (as in the local harness), so files it writes in the work directory belong
+    # to the job and can be overwritten (PAR post-step); HOME and the Matplotlib cache go to a writable /tmp.
+    run_cnvkit() {
+        docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp -e MPLCONFIGDIR=/tmp \
+            -v "$(pwd)":/work -w /work "${CNVKIT_IMAGE_TAG}" cnvkit.py "$@"
+    }
     run_cnvkit version
 
     # ── Stage inputs ──────────────────────────────────────────────────────────
