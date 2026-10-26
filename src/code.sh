@@ -41,6 +41,7 @@ main() {
 
     # ── Analysis ──────────────────────────────────────────────────────────────
     SAMPLE_ID="${sample_id}" \
+    DIPLOID_PARX_GENOME="${diploid_parx_genome:-}" \
     PURITY="${purity:-}" \
     PLOIDY="${ploidy:-}" \
     SAMPLE_SEX="${sample_sex:-}" \

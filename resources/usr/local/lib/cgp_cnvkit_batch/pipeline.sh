@@ -11,6 +11,7 @@
 #   inputs (environment)
 #     SAMPLE_ID           output file stem (required)
 #     NPROC               CPUs for coverage/segment (default: nproc)
+#     DIPLOID_PARX_GENOME grch38 | '' (DI-4097): --diploid-parx-genome on fix, segment, call, genemetrics, diagram
 #     PURITY, PLOIDY      optional tumour purity / ploidy
 #     SAMPLE_SEX          optional chromosomal sex for the diagram
 #     DROP_LOW_COVERAGE   true (default) | false
@@ -30,6 +31,20 @@ run_pipeline() {
     local s="${SAMPLE_ID}"
     local nproc="${NPROC:-$(nproc)}"
 
+    # ── Parameters (checked before any analysis step) ─────────────────────────
+    local -a px=()
+    case "${DIPLOID_PARX_GENOME:-}" in
+        grch38)
+            px=(--diploid-parx-genome grch38)
+            echo "[parx] --diploid-parx-genome grch38 on fix, segment, call, genemetrics and diagram" ;;
+        "")
+            echo "[parx] WARNING: diploid_parx_genome is empty: chrX PAR1/PAR2 are treated as X-specific, so"
+            echo "[parx] WARNING: CNVkit's sex inference calls every sample female. Atlas requires grch38." ;;
+        *)
+            echo "ERROR: diploid_parx_genome '${DIPLOID_PARX_GENOME}' is not supported (grch38, or empty)"
+            return 1 ;;
+    esac
+
     dedup_bed panel.bed
 
     # ── Coverage (amplicon mode — panel BED directly, no autobin) ─────────────
@@ -48,6 +63,7 @@ run_pipeline() {
         "${s}.targetcoverage.cnn" \
         empty.antitargetcoverage.cnn \
         reference.cnn \
+        "${px[@]}" \
         -o "${s}.cnr"
 
     # ── Segment: CBS ──────────────────────────────────────────────────────────
@@ -59,6 +75,7 @@ run_pipeline() {
         --method cbs \
         --drop-outliers 10 \
         "${seg_args[@]}" \
+        "${px[@]}" \
         --processes "${nproc}" \
         -o "${s}.cns"
     N_SEGS=$(grep -vc "^chromosome" "${s}.cns" || true)
@@ -80,6 +97,7 @@ run_pipeline() {
     run_cnvkit call \
         "${s}.cns" \
         "${call_args[@]}" \
+        "${px[@]}" \
         -o "${s}.call.cns"
 
     # ── Scatter plot (non-fatal) ──────────────────────────────────────────────
@@ -108,6 +126,7 @@ run_pipeline() {
         --threshold 0.5 \
         --min-probes 3 \
         "${sex_args[@]}" \
+        "${px[@]}" \
         --title "${s}" \
         -o "${s}.diagram.pdf" 2>/tmp/diagram_err.txt || \
     echo "[diagram] WARNING: diagram failed (non-fatal): $(tail -1 /tmp/diagram_err.txt)"
@@ -119,6 +138,7 @@ run_pipeline() {
         -s "${s}.call.cns" \
         -t 0.3 \
         --min-probes 3 \
+        "${px[@]}" \
         -o "${s}.genemetrics.tsv"
     N_GENES=$(( $(wc -l < "${s}.genemetrics.tsv") - 1 ))
     echo "[genemetrics] Genes with CN change (threshold 0.3): ${N_GENES}"

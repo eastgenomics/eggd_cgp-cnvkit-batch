@@ -14,23 +14,31 @@ S = SAMPLE
 IMAGE = "cgp-cnvkit:1.0.0"
 
 
-def v202_calls(segment_extra=("--drop-low-coverage",), call_extra=(), diagram_extra=()):
-    """The full v2.0.2 CNVkit call sequence for sample S, with --processes from the stubbed nproc (4)."""
+def expected_calls(parx=False, segment_extra=("--drop-low-coverage",), call_extra=(), diagram_extra=()):
+    """The full CNVkit call sequence for sample S, with --processes from the stubbed nproc (4).
+
+    parx: diploid_parx_genome=grch38 (DI-4097): --diploid-parx-genome on fix, segment, call, diagram, genemetrics.
+    """
+    px = ("--diploid-parx-genome", "grch38") if parx else ()
     return [
         ["version"],
         ["coverage", "tumour.bam", "panel.bed", "--processes", "4", "--output", f"{S}.targetcoverage.cnn"],
         # DI-4096: edge correction on (no --no-edge), as the PoN was built
-        ["fix", f"{S}.targetcoverage.cnn", "empty.antitargetcoverage.cnn", "reference.cnn", "-o", f"{S}.cnr"],
-        ["segment", f"{S}.cnr", "--method", "cbs", "--drop-outliers", "10", *segment_extra,
+        ["fix", f"{S}.targetcoverage.cnn", "empty.antitargetcoverage.cnn", "reference.cnn", *px, "-o", f"{S}.cnr"],
+        ["segment", f"{S}.cnr", "--method", "cbs", "--drop-outliers", "10", *segment_extra, *px,
          "--processes", "4", "-o", f"{S}.cns"],
-        ["call", f"{S}.cns", *call_extra, "-o", f"{S}.call.cns"],
+        ["call", f"{S}.cns", *call_extra, *px, "-o", f"{S}.call.cns"],
+        # scatter takes neither --diploid-parx-genome nor a sex argument in fc65941
         ["scatter", f"{S}.cnr", "-s", f"{S}.cns", "--trend", "--y-min", "-3", "--y-max", "3",
          "--fig-size", "14", "4", "--title", S, "-o", f"{S}.scatter.png"],
         ["diagram", f"{S}.cnr", "-s", f"{S}.call.cns", "--threshold", "0.5", "--min-probes", "3",
-         *diagram_extra, "--title", S, "-o", f"{S}.diagram.pdf"],
-        ["genemetrics", f"{S}.cnr", "-s", f"{S}.call.cns", "-t", "0.3", "--min-probes", "3",
+         *diagram_extra, *px, "--title", S, "-o", f"{S}.diagram.pdf"],
+        ["genemetrics", f"{S}.cnr", "-s", f"{S}.call.cns", "-t", "0.3", "--min-probes", "3", *px,
          "-o", f"{S}.genemetrics.tsv"],
     ]
+
+
+PARX_WARNING = "[parx] WARNING: diploid_parx_genome is empty"
 
 
 ALL_OUTPUTS = {"copy_ratios": f"{S}.cnr", "segments": f"{S}.cns", "call_segments": f"{S}.call.cns",
@@ -39,20 +47,45 @@ ALL_OUTPUTS = {"copy_ratios": f"{S}.cnr", "segments": f"{S}.cns", "call_segments
 
 
 @pytest.mark.parametrize("name, inputs, expected", [
-    ("defaults", {}, v202_calls()),
+    ("defaults", {}, expected_calls()),
     ("purity_above_gate", {"purity": 0.5, "ploidy": 3.1},
-     v202_calls(call_extra=("--purity", "0.5", "--ploidy", "3.1"))),
+     expected_calls(call_extra=("--purity", "0.5", "--ploidy", "3.1"))),
     ("purity_default_ploidy", {"purity": 0.62},
-     v202_calls(call_extra=("--purity", "0.62", "--ploidy", "2"))),
-    ("purity_at_gate", {"purity": 0.4, "ploidy": 3.1}, v202_calls()),
-    ("purity_below_gate", {"purity": 0.25}, v202_calls()),
-    ("sample_sex", {"sample_sex": "male"}, v202_calls(diagram_extra=("--sample-sex", "male"))),
-    ("no_drop_low_coverage", {"drop_low_coverage": False}, v202_calls(segment_extra=())),
+     expected_calls(call_extra=("--purity", "0.62", "--ploidy", "2"))),
+    ("purity_at_gate", {"purity": 0.4, "ploidy": 3.1}, expected_calls()),
+    ("purity_below_gate", {"purity": 0.25}, expected_calls()),
+    ("sample_sex", {"sample_sex": "male"}, expected_calls(diagram_extra=("--sample-sex", "male"))),
+    ("no_drop_low_coverage", {"drop_low_coverage": False}, expected_calls(segment_extra=())),
 ])
 def test_v202_command_lines(tmp_path, name, inputs, expected):
     run = run_app(tmp_path, inputs)
     assert run.returncode == 0, run.stderr
     assert run.cnvkit == expected
+
+
+# ── DI-4097: diploid_parx_genome ─────────────────────────────────────────────
+
+def test_parx_grch38(tmp_path):
+    run = run_app(tmp_path, {"diploid_parx_genome": "grch38"})
+    assert run.returncode == 0, run.stderr
+    assert run.cnvkit == expected_calls(parx=True)
+    assert PARX_WARNING not in run.stdout
+    assert "[parx] --diploid-parx-genome grch38" in run.stdout
+
+
+def test_parx_empty_warns_and_omits_the_flag(tmp_path):
+    run = run_app(tmp_path)
+    assert run.returncode == 0, run.stderr
+    assert not any("--diploid-parx-genome" in c for c in run.cnvkit)
+    assert PARX_WARNING in run.stdout
+
+
+def test_parx_rejects_other_values(tmp_path):
+    # dxapp.json restricts the value with choices; the app checks it too, before any analysis step
+    run = run_app(tmp_path, {"diploid_parx_genome": "hg19"})
+    assert run.returncode != 0
+    assert "diploid_parx_genome" in run.stdout + run.stderr
+    assert run.cnvkit == [["version"]]
 
 
 def test_v202_docker_invocation(tmp_path):

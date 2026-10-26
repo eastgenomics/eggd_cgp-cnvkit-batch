@@ -52,6 +52,16 @@
       "help": "Target intervals in BED format. Must be identical to the BED used to build the PoN reference. Chr-prefix chromosome names required."
     },
     {
+      "name": "diploid_parx_genome",
+      "class": "string",
+      "label": "Diploid pseudo-autosomal regions (genome build)",
+      "optional": true,
+      "choices": [
+        "grch38"
+      ],
+      "help": "Passed as --diploid-parx-genome to cnvkit.py fix, segment, call, genemetrics and diagram (and to the sex checks), so chrX PAR1/PAR2 are treated as diploid in both sexes. Must be grch38 for Atlas CGP and must match the PoN build. If empty, the flag is omitted and a warning is logged: CNVkit then infers every sample as female."
+    },
+    {
       "name": "purity",
       "class": "float",
       "label": "Tumour purity (0\u20131)",
