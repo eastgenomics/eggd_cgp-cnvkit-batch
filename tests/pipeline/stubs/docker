@@ -11,6 +11,7 @@ Environment:
   STUB_RAW_SEX, STUB_RAW_Y   `cnvkit.py sex` on a .targetcoverage.cnn: sex call and Y log-ratio (Male, -1.13)
   STUB_CNR_SEX               `cnvkit.py sex` on a .cnr: sex call (Male)
   STUB_OUTPUT_<SUBCOMMAND>   a file copied as that subcommand's output instead of the placeholder
+  STUB_OUTPUT_<SUBCOMMAND>_<DIR>  the same, only when run in the mounted directory named <dir> (e.g. PARFIX)
 """
 import shutil
 import json
@@ -76,8 +77,10 @@ out = None
 for flag in ("-o", "--output"):
     if flag in cmd:
         out = cmd[cmd.index(flag) + 1]
-if out and os.environ.get(f"STUB_OUTPUT_{sub.upper()}"):
-    shutil.copyfile(os.environ[f"STUB_OUTPUT_{sub.upper()}"], os.path.join(host, out))
+override = (os.environ.get(f"STUB_OUTPUT_{sub.upper()}_{os.path.basename(host).upper()}")
+            or os.environ.get(f"STUB_OUTPUT_{sub.upper()}"))
+if out and override:
+    shutil.copyfile(override, os.path.join(host, out))
 elif sub == "sex" and out:
     sample = cmd[2]
     if sample.endswith(".cnr"):

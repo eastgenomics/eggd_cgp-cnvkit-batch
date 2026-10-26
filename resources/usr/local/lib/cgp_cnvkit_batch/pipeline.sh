@@ -19,9 +19,10 @@
 #     DROP_LOW_COVERAGE   true (default) | false
 #     DROPOUT_MASK        true (default) | false (DI-4139, D7): segment on the dropout-masked copy of the .cnr
 #   outputs (files in the current directory)
-#     <SAMPLE_ID>.targetcoverage.cnn .cnr .cns .call.cns .genemetrics.tsv, and .scatter.png / .diagram.pdf when
-#     the (non-fatal) plots succeed
-#   outputs (shell variables)  N_SEGS, N_GENES, SEX_ARG, SEX_SOURCE, LIMS_SEX, DROPOUT_PROBES
+#     <SAMPLE_ID>.targetcoverage.cnn .cnr .cns .call.cns .genemetrics.tsv .genemetrics.noparfix.tsv
+#     .dropout_qc.tsv .sex_raw.tsv .sex_cnr.tsv, and .scatter.png / .diagram.pdf when the (non-fatal) plots succeed
+#   outputs (shell variables)  N_SEGS, N_GENES, SEX_ARG, SEX_SOURCE, LIMS_SEX, DROPOUT_PROBES,
+#                              PAR_FIX_APPLIED, PAR_SPAN_SEGMENTS
 
 dedup_bed() {
     # Deduplicate BED intervals: some panel BEDs have identical coordinates from multiple transcript
@@ -171,14 +172,40 @@ run_pipeline() {
 
     # ── Gene metrics ──────────────────────────────────────────────────────────
     echo "[genemetrics] Computing per-gene metrics..."
-    run_cnvkit genemetrics \
-        "${s}.cnr" \
-        -s "${s}.call.cns" \
-        -t 0.3 \
-        --min-probes 3 \
-        "${px[@]}" \
-        "${x[@]}" \
-        -o "${s}.genemetrics.tsv"
+    local -a gm_args=(-t 0.3 --min-probes 3 "${px[@]}" "${x[@]}")
+    run_cnvkit genemetrics "${s}.cnr" -s "${s}.call.cns" "${gm_args[@]}" -o "${s}.genemetrics.tsv"
+
+    # ── PAR post-step (DI-4101) ───────────────────────────────────────────────
+    # For a sample genemetrics treats as male, CNVkit (fc65941) shifts every chrX bin +1.0, the PARs included.
+    # Re-run genemetrics, with the same arguments, on copies with log2 - 1 in the bins/segments wholly inside
+    # PAR1/PAR2; every non-PAR row must be byte-identical (the job fails otherwise). The uncorrected read-out is
+    # kept as <s>.genemetrics.noparfix.tsv (an identical copy when the post-step does not run; D3).
+    cp "${s}.genemetrics.tsv" "${s}.genemetrics.noparfix.tsv"
+    local decision
+    decision=$(cnvkit_parfix.py decide --sex-arg "${SEX_ARG}" --cnr-sex "${s}.sex_cnr.tsv" \
+        --parx "${DIPLOID_PARX_GENOME:-}")
+    PAR_FIX_APPLIED=$(cut -f1 <<< "${decision}")
+    PAR_SPAN_SEGMENTS=0
+    if [ "${PAR_FIX_APPLIED}" = "1" ]; then
+        local shifted
+        shifted=$(cnvkit_parfix.py shift "${s}.cnr" "${s}.call.cns" parfix)
+        echo "[parfix] post-step applied ($(cut -f2 <<< "${decision}")): ${shifted}"
+        PAR_SPAN_SEGMENTS=$(sed -n 's/.*span_segs=\([0-9]*\).*/\1/p' <<< "${shifted}")
+        if [ "${PAR_SPAN_SEGMENTS}" -gt 0 ]; then
+            echo "[parfix] WARNING: ${PAR_SPAN_SEGMENTS} call.cns segment(s) span a PAR boundary: PAR genes in them"
+            echo "[parfix] WARNING: keep the +1 shift (known limitation): review male CRLF2 calls."
+        fi
+        (cd parfix && run_cnvkit genemetrics "${s}.cnr" -s "${s}.call.cns" "${gm_args[@]}" -o "${s}.genemetrics.tsv")
+        # assigned first, so a failed check (non-PAR rows differ) stops the job under set -e
+        local checked
+        checked=$(cnvkit_parfix.py compare "${s}.genemetrics.noparfix.tsv" "parfix/${s}.genemetrics.tsv" \
+            "${s}.call.cns")
+        echo "[parfix] ${checked}"
+        cp "parfix/${s}.genemetrics.tsv" "${s}.genemetrics.tsv"
+    else
+        echo "[parfix] not applied: $(cut -f2 <<< "${decision}")"
+    fi
+
     N_GENES=$(( $(wc -l < "${s}.genemetrics.tsv") - 1 ))
     echo "[genemetrics] Genes with CN change (threshold 0.3): ${N_GENES}"
 }

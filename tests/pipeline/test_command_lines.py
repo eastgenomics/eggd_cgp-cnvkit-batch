@@ -17,12 +17,13 @@ S = SAMPLE
 IMAGE = "cgp-cnvkit:1.0.0"
 
 
-def expected_calls(parx=False, sex="male", s=None, segment_extra=("--drop-low-coverage",), mask=True):
+def expected_calls(parx=False, sex="male", s=None, segment_extra=("--drop-low-coverage",), mask=True, parfix=False):
     """The full CNVkit call sequence for a sample (default S, LIMS M), with --processes from the stubbed nproc (4).
 
     parx: diploid_parx_genome=grch38 (DI-4097): --diploid-parx-genome on fix, segment, call, diagram, genemetrics.
     sex:  the applied sex (DI-4100): -x on call, diagram and genemetrics; None = no -x (CNVkit infers).
     mask: dropout_mask (DI-4139): segment reads <s>.seg_input.cnr; every other step reads the unmasked <s>.cnr.
+    parfix: the PAR post-step ran (DI-4101): genemetrics re-run, same arguments, on the PAR-shifted copies in parfix/.
     """
     S = s or SAMPLE
     px = ("--diploid-parx-genome", "grch38") if parx else ()
@@ -45,7 +46,12 @@ def expected_calls(parx=False, sex="male", s=None, segment_extra=("--drop-low-co
          *px, *x, "--title", S, "-o", f"{S}.diagram.pdf"],
         ["genemetrics", f"{S}.cnr", "-s", f"{S}.call.cns", "-t", "0.3", "--min-probes", "3", *px, *x,
          "-o", f"{S}.genemetrics.tsv"],
-    ]
+    ] + ([gm_call(S, px, x)] if parfix else [])
+
+
+def gm_call(S, px, x):
+    return ["genemetrics", f"{S}.cnr", "-s", f"{S}.call.cns", "-t", "0.3", "--min-probes", "3", *px, *x,
+            "-o", f"{S}.genemetrics.tsv"]
 
 
 PARX_WARNING = "[parx] WARNING: diploid_parx_genome is empty"
@@ -181,6 +187,77 @@ def test_only_segment_reads_the_masked_file(tmp_path):
     assert readers == ["segment"]
 
 
+# ── DI-4101: PAR post-step (D3, D11) ─────────────────────────────────────────
+
+GM_H = "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tcn\tprobes\tsegment_weight\tsegment_probes\n"
+TP53 = "TP53\tchr17\t7661779\t7687538\t-0.62\t400\t5\t1\t10\t5\t10\n"
+CRLF2 = "CRLF2\tchrX\t1190891\t1212654\t1.26805\t679\t7.2\t3\t8\t7.2\t8\n"
+CALL_H = "chromosome\tstart\tend\tgene\tlog2\tcn\tdepth\tprobes\tweight\n"
+
+
+def parfix_fixtures(tmp_path, parfix_rows=(TP53,)):
+    """Original genemetrics with CRLF2 at +1 (male shift); the re-run in parfix/ drops it (0.268 < 0.3)."""
+    (tmp_path / "gm.tsv").write_text(GM_H + TP53 + CRLF2)
+    (tmp_path / "gm_parfix.tsv").write_text(GM_H + "".join(parfix_rows))
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                                "chrX\t1190891\t2781479\tCRLF2\t0.26805\t2\t679\t8\t7.2\n")
+    return {"STUB_OUTPUT_GENEMETRICS": str(tmp_path / "gm.tsv"),
+            "STUB_OUTPUT_GENEMETRICS_PARFIX": str(tmp_path / "gm_parfix.tsv"),
+            "STUB_OUTPUT_CALL": str(tmp_path / "call.cns")}
+
+
+PARX = {"diploid_parx_genome": "grch38"}
+
+
+@pytest.mark.parametrize("sample, cnr_sex, override, applied", [
+    (SAMPLE, "Female", None, True),        # -x male: post-step, whatever the .cnr says
+    (F_SAMPLE, "Male", None, False),       # -x female: never
+    (U_SAMPLE, "Male", None, True),        # no -x: CNVkit's own guess on the .cnr decides
+    (U_SAMPLE, "Female", None, False),
+    (U_SAMPLE, "Female", "male", True),    # override male
+])
+def test_parfix_decision(tmp_path, sample, cnr_sex, override, applied):
+    from apprun import default_inputs
+    inputs, names = default_inputs(sample_id=sample)
+    inputs.update(PARX)
+    if override:
+        inputs["sex_override"] = override
+    env = dict(parfix_fixtures(tmp_path), STUB_CNR_SEX=cnr_sex)
+    run = run_app(tmp_path, inputs, names, stub_env=env)
+    assert run.returncode == 0, run.stderr
+    sex = {SAMPLE: "male", F_SAMPLE: "female"}.get(sample) if not override else override
+    assert run.cnvkit == expected_calls(parx=True, sex=sex, s=sample, parfix=applied)
+    w = run.workdir
+    noparfix = (w / f"{sample}.genemetrics.noparfix.tsv").read_text()
+    final = (w / f"{sample}.genemetrics.tsv").read_text()
+    assert noparfix == GM_H + TP53 + CRLF2                     # always the uncorrected read-out (D3)
+    assert final == (GM_H + TP53 if applied else noparfix)
+    assert ("[parfix] post-step applied" in run.stdout) is applied
+    if applied:
+        rerun = run.docker[-1]                                     # the genemetrics re-run is the last call
+        assert rerun["cmd"][1] == "genemetrics"
+        assert rerun["options"] == ["--rm", "-v", f"{w / 'parfix'}:/work", "-w", "/work"]
+        assert (w / "parfix" / f"{sample}.cnr").exists() and (w / "parfix" / f"{sample}.call.cns").exists()
+        assert "par_check=1" in run.stdout
+
+
+def test_parfix_not_applicable_without_parx(tmp_path):
+    run = run_app(tmp_path, stub_env=parfix_fixtures(tmp_path))          # LIMS M, no diploid_parx_genome
+    assert run.returncode == 0, run.stderr
+    assert run.cnvkit == expected_calls(parx=False, parfix=False)
+    assert (run.workdir / f"{S}.genemetrics.noparfix.tsv").read_bytes() == \
+           (run.workdir / f"{S}.genemetrics.tsv").read_bytes()
+    assert "[parfix] not applied: no --diploid-parx-genome" in run.stdout
+
+
+def test_parfix_non_par_difference_fails_the_job(tmp_path):
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53.replace("-0.62", "-0.70"),))
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "non-PAR rows differ" in run.stderr
+    assert run.outputs == {}
+
+
 def test_ploidy_has_no_default():
     # a default would make DNAnexus set ploidy on every job, and the deprecation warning would always fire
     from apprun import DXAPP
@@ -194,7 +271,7 @@ def test_ploidy_has_no_default():
 def test_parx_grch38(tmp_path):
     run = run_app(tmp_path, {"diploid_parx_genome": "grch38"})
     assert run.returncode == 0, run.stderr
-    assert run.cnvkit == expected_calls(parx=True)
+    assert run.cnvkit == expected_calls(parx=True, parfix=True)
     assert PARX_WARNING not in run.stdout
     assert "[parx] --diploid-parx-genome grch38" in run.stdout
 
