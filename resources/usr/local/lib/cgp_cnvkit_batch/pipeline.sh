@@ -119,7 +119,8 @@ run_pipeline() {
     else
         dropout_mask.py qc-header "${s}.dropout_qc.tsv"
         DROPOUT_PROBES=0
-        echo "[dropout] dropout_mask=false: segment reads the unmasked .cnr (validated configuration without the mask)"
+        echo "[dropout] dropout_mask=false: segment reads the unmasked .cnr (validated final configuration"
+        echo "[dropout] without the mask, arm A0; not v2.0.x)"
     fi
 
     # ── Segment: CBS ──────────────────────────────────────────────────────────

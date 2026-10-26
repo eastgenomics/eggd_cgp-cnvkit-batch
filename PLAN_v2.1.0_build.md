@@ -134,9 +134,9 @@ Fetched files are verified against the sha256 list.
 
 **Roles of the baselines:**
 - U-A0, U-M and N-A0 prove the code is correct on both data types.
-- N-M proves the production configuration (non-UMI, mask on) and is the release gate (E3/E4).
+- N-M proves the production configuration (non-UMI, mask on) and is the release gate (E3).
 
-**Expected dropout effect on non-UMI data** (for the L4 and T13/T15 expectations):
+**Expected dropout effect on non-UMI data** (for the L4 and E3 expectations):
 - calls change in 3 sequencings: 25330S0048 +17, 25330S0109 +5, 24260S0018 +3;
 - the 25330S0044 FGFR3 loss call **stays**: probe 1 has 11.2 raw reads, so it is not masked;
 - 4 probes are masked on UMI only (FGFR3 in 25330S0044 and 25330S0054, EGFR in 25330S0057, CCNE1 in 25330S0113), and none on non-UMI only.
@@ -177,7 +177,7 @@ tests/
     pipeline/test_dxapp_contract.py            dxapp.json ↔ code.sh inputs/outputs consistency
     validation/fetch_validation_data.sh        dx download into $CNVKIT_VALIDATION_DATA (gitignored)
     validation/test_equiv_*.py                 bundled scripts vs the analysis-repo originals (226 sequencings)
-    harness/run_local.sh                       real image, real data, pipeline.sh, cmp against expected
+    harness/run_local.py                       real image, real data, pipeline.sh, cmp against expected
     dx/validation_jobs.py                      DNAnexus driver: prepare, build, submit T|E3, status, check
     dx/runs/                                   inputs, applet ID, job IDs and check reports (the evidence)
 requirements-test.txt                          pytest only (the bundled scripts stay stdlib-only)
@@ -351,9 +351,9 @@ In order. Each change updates the L2 scenarios first, so the test fails, and the
 | 4.9 | DI-4104 (D5) | New outputs `genemetrics_noparfix`, `sex_qc`, `sex_check_mqc`, `dropout_qc`, `target_coverage`; update the help text of every input and output; version `2.1.0` |
 
 ### Phase 5: local harness (L4)
-- `tests/harness/run_local.sh <sample> --data umi|nonumi [--start-from coverage|bam] [--dropout-mask true|false]`:
+- `tests/harness/run_local.py --data umi|nonumi [--dropout-mask true|false] [--start-from coverage|bam] [--samples S ...]`:
   - sources `pipeline.sh` with the real Docker `run_cnvkit` and the row's `cn_reference` from the matching PoN tarball;
-  - writes to `tests/.data/harness/<data>/<sample>/`, `cmp`s against the baseline and prints a per-file PASS/FAIL table.
+  - writes to `tests/.data/harness/<label>/<run>/<sample>/`, compares byte for byte with the baseline, prints a per-sample PASS/FAIL line and writes `report.tsv`.
 - **Runs:**
 
   | Data | Mask | Sequencings | Start | Expected |
@@ -390,10 +390,15 @@ Also:
 
 Then run the pr-workflow review-fix loop locally.
 
-### Phase 7: DNAnexus testing
-1. **L5 matrix.** `tests/dx/validation_jobs.py build` builds the applet into the 004 validation project (`/batch_app_v2.1.0/`; 004 because this is validation evidence), `submit T` launches the runs below, and `check T` downloads the outputs, compares them with the expected files and greps the job logs.
-   - Inputs are **non-UMI BAMs** (`nonumi_inventory.tsv` `new_bam`) with the validated non-UMI PoN of each sequencing, unless the row says otherwise.
-   - Every run also checks `target_coverage` against `/coverage_nonumi/` (UMI runs: `/coverage/`).
+### Phase 7: DNAnexus testing — done 2026-10-26 (results at the top of this file)
+Driver: `tests/dx/validation_jobs.py` (`prepare`, `build`, `submit T|E3`, `status`, `check T|E3`). It runs in the 004
+validation project (`/batch_app_v2.1.0/`; 004 because this is validation evidence) and records the inputs, applet,
+job IDs and reports in `tests/dx/runs/`.
+- Inputs are **non-UMI BAMs** (`nonumi_inventory.tsv` `new_bam`), each with its validated non-UMI PoN: the leave-out
+  PoN for members, the controlled PoN `file-JFP3fzQ455KjXVZ23JgX1gF2` for non-members.
+- Every BAM-start job's `target_coverage` is compared with the coverage-app output in `/coverage_nonumi/`.
+
+1. **L5 T matrix** (12 jobs).
 
    | # | Case | Expect |
    |---|---|---|
@@ -401,31 +406,35 @@ Then run the pr-workflow review-fix loop locally.
    | T5 | Override M on a LIMS-U sample | `-x male`, source `override` |
    | T6 | Override F on a LIMS-M sample | `sex_mismatch=1` (D8), post-step not run |
    | T7 | Override `X` | Job fails before `coverage` |
-   | T8 | `sample_id` without field 5, BAM name with it | Source `bam_name` |
-   | T9 | Neither has field 5 | U, inference, post-step by `.cnr` sex |
+   | T8 | `sample_id` without field 5, BAM name with it | Source `bam_name`; content = N-M |
+   | T9 | Neither gives M/F | U, inference, post-step by `.cnr` sex; content = N-M |
    | T10 | `diploid_parx_genome` empty | Warning, no PARX flags, no post-step |
    | T11 | `dropout_mask=false` on 25330S0048 | N-A0 outputs, header-only `dropout_qc` |
    | T12 | `purity`/`ploidy`/`sample_sex` supplied | Warnings; outputs identical to T1 |
-   | T13 | **UMI BAMs** and UMI PoNs: 25330S0048, 24260S0018, 25330S0044, 25330S0104, mask on | U-M outputs and `dropout_qc` rows |
-   | T14 | Female-only | `noparfix` identical to `genemetrics` |
-   | T15 | Production setting: the controlled PoN `file-JFP3fzQ455KjXVZ23JgX1gF2`, mask on, 25330S0048 (a PoN non-member) | N-M outputs (+17 genes vs N-A0) and the N-M `mask_qc.tsv` rows |
 
-2. **L6 full equivalence** (the DI-4094 comment; part of DI-4118). `validation_jobs.py submit E3` runs all 226 from BAM in `project-JF3p1f04Yggp0vf3PYjy7Q0F` with the final inputs (`diploid_parx_genome=grch38`, no purity/ploidy, `drop_low_coverage=true`); `check E3` writes `tests/dx/runs/E3_report.tsv`.
+   Planned cases not run, by decision:
+   - T13 (UMI BAMs) is omitted with E2;
+   - T14 (female) is T2;
+   - T15 (the controlled PoN on a non-member) is covered by E3, where every non-member runs with the controlled PoN.
 
-   | Run | Data | Mask | PoN | Expected | When |
-   |---|---|---|---|---|---|
-   | E1 | Non-UMI | off | Validated non-UMI (leave-out / shared) | **N-A0**, byte-identical, all 226 | Now |
-   | E2 | UMI | on | Validated UMI | **U-M**, byte-identical, all 226, comparing post-step files as in §0b | Now |
-   | E3 | Non-UMI | on | Validated non-UMI | **N-M**, byte-identical, all 226 | Now: **release gate** |
-   | E4 | Non-UMI | on | Controlled PoN | Production read-out. Non-members equal E3; differences for PoN members are listed, not failed | Now |
+2. **L6 E3 equivalence** (the DI-4094 comment; part of DI-4118): all 226 sequencings from BAM with the final inputs
+   (`diploid_parx_genome=grch38`, no purity/ploidy, `drop_low_coverage=true`, `dropout_mask=true`) and the validated
+   non-UMI PoNs. Expected: **N-M**, byte-identical, all 226. Acceptance as in `PLAN_v2.1.0.md` §5.3.
 
-   - Acceptance as in `PLAN_v2.1.0.md` §5.3.
-   - All four runs can go as soon as the applet passes L5.
-3. The L5 and L6 reports become the Confluence test evidence: T1… in the `eggd_cgp-cnvkit-pon v2.0.0` format, as in `memory/confluence_doc.md`. Cite `atlas_cnvkit_static_pon_cgp_hg38_v1.0.0.cnn` (Confluence `4854120471`) as the PoN.
+   Planned runs not made, by decision:
+   - E1 (mask off): covered by the L4 harness (16 × N-A0) and T1–T4, T11.
+   - E2 (UMI): omitted; UMI data is no longer produced, and L3/L4 cover the code on UMI data.
+   - E4 (controlled PoN for all): for non-members it is E3 itself; for members it is a production read-out with
+     differences expected by design, not a pass/fail test.
+3. The L5 and L6 reports become the Confluence test evidence: T1… in the `eggd_cgp-cnvkit-pon v2.0.0` format, as in
+   `memory/confluence_doc.md`. Cite `atlas_cnvkit_static_pon_cgp_hg38_v1.0.0.cnn` (Confluence `4854120471`) as the
+   PoN. Since the tested applet (`487e9b1`) the app's own files differ only by text (the `dropout_mask` help string
+   and one log message): `git diff 487e9b1 -- src resources dxapp.json`.
 
 ### Phase 8: release
 **Gates:**
-- E3 and E4 pass;
+- the T matrix and E3 pass (done);
+- PR #4 is approved;
 - the PoN page is approved.
 
 The non-UMI dropout analysis left the rule and constants unchanged (DI-4139 comment 72496), so no change to `dropout_mask.py`, D6 or D7 is needed.
@@ -448,9 +457,9 @@ L3–L6 stay manual, because they need DNAnexus data or access. Their reports ar
 | The refactor silently changes v2.0.2 behaviour | Phase 1 records the current argv before any change; Phase 2 must keep it |
 | A port drifts from the validated script | L3 byte-identity on all 226 sequencings; source md5 recorded in each header |
 | The post-step via the CLI differs from the validation's in-process call | L3 re-runs both and `cmp`s; the harness re-checks with the real image |
-| PoN-member differences hide real regressions | L6 run 1 gives each sequencing its validated leave-out or shared PoN, so byte-identity holds for all 226; run 2 (static PoN) shows the production behaviour |
+| PoN-member differences hide real regressions | E3 gives each sequencing its validated leave-out or shared PoN, so byte-identity holds for all 226 |
 | The workflow still wires PURPLE `sample_sex`/`purity`/`ploidy` | They are ignored with a warning (D2, D4); T12 proves the outputs are unaffected |
-| `dropout_mask=false` drifts from A0 | T11, the Phase 5 A0 reruns and E1 |
+| `dropout_mask=false` drifts from A0 | T1–T4, T11 and the Phase 5 A0 runs (16 × N-A0, 16 × U-A0) |
 | The batch app's own coverage differs from the coverage app's, which the PoN and N-A0 were built from | L4 BAM-start `cmp`; `target_coverage` checked in every L5/L6 run; Phase 5 stops on a difference |
 | The mask rule was tuned on UMI data; depth rose about 1.43× on non-UMI | **Closed:** the non-UMI evaluation (DI-4139 comment 72496) shows the rule and constants are unchanged and arm M meets every T3 margin. L3 and E3 test the port on non-UMI data |
 | A UMI-only expectation is applied to non-UMI data (e.g. the 25330S0044 FGFR3 call removal) | §0b lists the non-UMI dropout effect; every L4/L5/L6 expectation names its baseline (U-* or N-*) |

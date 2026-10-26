@@ -181,7 +181,8 @@ def test_dropout_mask_off(tmp_path):
     assert run.cnvkit == expected_calls(mask=False)
     assert not (run.workdir / f"{S}.seg_input.cnr").exists()
     assert (run.workdir / f"{S}.dropout_qc.tsv").read_text() == QC_HEADER
-    assert "[dropout] dropout_mask=false" in run.stdout
+    assert ("[dropout] dropout_mask=false: segment reads the unmasked .cnr (validated final configuration\n"
+            "[dropout] without the mask, arm A0; not v2.0.x)") in run.stdout
 
 
 def test_only_segment_reads_the_masked_file(tmp_path):
