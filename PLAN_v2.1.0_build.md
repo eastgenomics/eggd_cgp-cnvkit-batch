@@ -12,7 +12,21 @@
   - round 1: `sample_id` is now validated as a file stem; the reviewer's "code.sh never calls main" was rejected, because the DNAnexus executor calls `main`;
   - round 2: CNVkit now runs as the executor's user, so the PAR post-step can overwrite container-written files.
 
-Next: Phase 7 (DNAnexus testing), which needs a go-ahead because it creates a 003 project and runs jobs.
+**Phase 7 (2026-10-26): done**, in the 004 validation project under `/batch_app_v2.1.0/`, with applet
+`applet-JFPb1Qj4Yggz5kp4KBk5zgJV` built from `487e9b1`. Driver: `tests/dx/validation_jobs.py`; job IDs and reports are in `tests/dx/runs/`.
+- **Scope (agreed):** the T matrix and E3 only.
+  - E1 is covered by the local harness and T11.
+  - E2 is dropped because UMI data is no longer produced.
+  - E4 for non-members is E3 itself (non-members run with the controlled PoN).
+  - T13 (UMI) and T15 are dropped, and T14 is T2.
+- **T matrix:** 12 jobs, 106 checks, 0 FAIL.
+- **E3:** 226 jobs from the non-UMI BAMs, mask on, validated non-UMI PoNs; 2,712 checks, 0 FAIL.
+  - Every `.cnr`, `.cns`, `.call.cns`, `genemetrics` and `genemetrics.noparfix` file is byte-identical to N-M.
+  - Coverage is byte-identical to the coverage app in 226/226.
+  - `dropout_qc` = `mask_qc` in 226/226: 78 probes in 41 sequencings, plus 2,075 bins in 25330S0104.
+  - The PAR post-step ran on the same 60 sequencings; `sex_mismatch` = 1 in 0/173 LIMS M/F.
+
+Next: Phase 8 (PR, `dx build --app`, publish), which needs a go-ahead.
 
 ---
 

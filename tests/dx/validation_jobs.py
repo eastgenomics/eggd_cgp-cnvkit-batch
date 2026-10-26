@@ -243,23 +243,51 @@ def status(a):
 
 # ── check ────────────────────────────────────────────────────────────────────
 
-def download_outputs(job_desc, dest):
+def fetch_job(job_id, dest):
+    """Describe a job and download its outputs (one `dx download` for all files) and its log into dest, once.
+
+    Returns (describe, log text). Cached in dest: describe.json, the output files, job.log.
+    """
     dest.mkdir(parents=True, exist_ok=True)
-    for name, link in (job_desc.get("output") or {}).items():
-        fid = link["$dnanexus_link"]
-        fid = fid if isinstance(fid, str) else fid["id"]
-        target = dest / dx("describe", fid, "--name").strip()
-        if not target.exists():
-            dx("download", f"{job_desc['project']}:{fid}", "-o", str(target), "-f")
+    cached = dest / "describe.json"
+    if cached.exists():
+        d = json.loads(cached.read_text())
+    else:
+        d = dxjson("describe", job_id)           # `dx find jobs` omits the job output
+    outputs = d.get("output") or {}
+    if d["state"] == "done" and not (dest / ".downloaded").exists():
+        refs = []
+        for link in outputs.values():
+            fid = link["$dnanexus_link"]
+            refs.append(f"{d['project']}:{fid if isinstance(fid, str) else fid['id']}")
+        if refs:
+            dx("download", *refs, "-o", f"{dest}/", "-f")
+        (dest / ".downloaded").write_text("")
     log = dest / "job.log"
     if not log.exists():
-        log.write_text(dx("watch", job_desc["id"], "--get-streams", "--no-timestamps", "--no-job-info", "-q",
-                          check=False))
-    return log.read_text()
+        log.write_text(dx("watch", job_id, "--get-streams", "--no-timestamps", "--no-job-info", "-q", check=False))
+    if d["state"] in ("done", "failed", "terminated"):
+        cached.write_text(json.dumps(d))
+    return d, log.read_text()
+
+
+def prefetch(which, rows, jobs=12):
+    """Fetch every job of the set in parallel; returns {job ID: (describe, log)}."""
+    from concurrent.futures import ThreadPoolExecutor
+    with ThreadPoolExecutor(jobs) as ex:
+        futs = {r["job"]: ex.submit(fetch_job, r["job"], DL / which / r["key"].replace("/", "__")) for r in rows}
+        out = {}
+        for i, (job, f) in enumerate(futs.items(), 1):
+            out[job] = f.result()
+            if i % 25 == 0:
+                print(f"  fetched {i}/{len(rows)}", flush=True)
+    return out
 
 
 def check(a):
-    rows, desc = states(a.set)
+    rows = read_tsv(jobs_path(a.set))
+    fetched = prefetch(a.set, rows)
+    desc = {job: d for job, (d, _) in fetched.items()}
     results = []
     male = {**run_local.treated_male_log("nonumi", True)}
     male_a0 = run_local.treated_male_log("nonumi", False)
@@ -272,8 +300,8 @@ def check(a):
         def add(check_name, ok, detail=""):
             results.append((key, r["job"], check_name, "PASS" if ok else "FAIL", detail))
 
+        log = fetched[r["job"]][1]
         if expect == "fail":
-            log = dx("watch", r["job"], "--get-streams", "--no-timestamps", "--no-job-info", "-q", check=False)
             add("job failed", d["state"] == "failed", d["state"])
             add("before coverage", "not accepted" in log and "[coverage]" not in log)
             continue
@@ -281,10 +309,8 @@ def check(a):
             add("job done", False, d["state"])
             continue
         add("job done", True)
-        d = dxjson("describe", r["job"])          # `dx find jobs` omits the job output
         sid = r["sample_id"]
         dest = DL / a.set / key.replace("/", "__")
-        log = download_outputs(d, dest)
         missing = [o for o in OUTPUTS if o not in (d.get("output") or {})]
         add("all outputs", not missing, ",".join(missing))
         add("edge correction (log)", "Correcting for density bias" in log)
