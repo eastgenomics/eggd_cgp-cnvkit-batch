@@ -224,11 +224,14 @@ def submit(a):
 
 
 def states(which):
+    """(recorded rows, {job ID: full describe}) for the recorded jobs of a set, in one API query."""
     rows = read_tsv(jobs_path(which))
-    out = {}
-    for i in range(0, len(rows), 100):
-        for d in json.loads(dx("describe", *[r["job"] for r in rows[i:i + 100]], "--json", "--multi")):
-            out[d["id"]] = d
+    found = json.loads(dx("find", "jobs", "--project", PROJECT, "--property", f"validation_set={which}",
+                          "-n", "5000", "--json"))
+    out = {d["id"]: d for d in found}
+    missing = [r["job"] for r in rows if r["job"] not in out]
+    for job in missing:                      # e.g. a job found later than the index catches up
+        out[job] = dxjson("describe", job)
     return rows, out
 
 
@@ -278,6 +281,7 @@ def check(a):
             add("job done", False, d["state"])
             continue
         add("job done", True)
+        d = dxjson("describe", r["job"])          # `dx find jobs` omits the job output
         sid = r["sample_id"]
         dest = DL / a.set / key.replace("/", "__")
         log = download_outputs(d, dest)
@@ -285,10 +289,11 @@ def check(a):
         add("all outputs", not missing, ",".join(missing))
         add("edge correction (log)", "Correcting for density bias" in log)
         mask = extra.get("dropout_mask", True)
-        if a.set == "E3" or key.startswith(("T1", "T2", "T3", "T4", "T11")):
+        case = key.split("_", 1)[0]               # T1, T2, ... (exact: T1 must not match T10-T12)
+        if a.set == "E3" or case in ("T1", "T2", "T3", "T4", "T11"):
             # same file names as the baseline: the harness checks, on the downloaded outputs
             ns = argparse.Namespace(data="nonumi", mask=mask, start_from="bam")
-            tmp = DL / f"{a.set}_layout"
+            tmp = DL / f"{a.set}_layout" / key.replace("/", "__")
             link = tmp / run / s
             link.parent.mkdir(parents=True, exist_ok=True)
             if not link.exists():
@@ -296,29 +301,29 @@ def check(a):
             for _, c, res, det in run_local.check_sample({"run": run, "sample": s}, ns, tmp, 0,
                                                           male if mask else male_a0):
                 results.append((key, r["job"], c, res, det))
-        elif key.startswith(("T8", "T9")):
+        elif case in ("T8", "T9"):
             # sample_id without the 5th field: same content as N-M, other file names
             base = DATA / "nonumi" / "calls" / "M" / run
             for ext in (".cnr", ".cns", ".call.cns", ".genemetrics.tsv"):
                 add(ext, (dest / f"{sid}{ext}").read_bytes() == (base / f"{s}{ext}").read_bytes())
-            src = "bam_name" if key.startswith("T8") else "cnvkit_inference"
+            src = "bam_name" if case == "T8" else "cnvkit_inference"
             add("sex source", f"(source: {src}" in log, src)
-        elif key.startswith("T5"):
+        elif case == "T5":
             qc = read_tsv(dest / f"{sid}.sex_qc.tsv")[0]
             add("override applied", qc["applied_sex"] == "male" and qc["applied_source"] == "override")
             add("post-step (male)", qc["par_fix_applied"] == "1")
             add("sex_mismatch (declared M, no chrY)", qc["sex_mismatch"] == "1", qc["chrY_sex"])
-        elif key.startswith("T6"):
+        elif case == "T6":
             qc = read_tsv(dest / f"{sid}.sex_qc.tsv")[0]
             add("override applied", qc["applied_sex"] == "female" and qc["applied_source"] == "override")
             add("no post-step", qc["par_fix_applied"] == "0")
             add("sex_mismatch (declared F, chrY present)", qc["sex_mismatch"] == "1")
-        elif key.startswith("T10"):
+        elif case == "T10":
             add("parx warning", "[parx] WARNING: diploid_parx_genome is empty" in log)
             add("no post-step", "[parfix] not applied: no --diploid-parx-genome" in log)
             add("noparfix = genemetrics", (dest / f"{sid}.genemetrics.tsv").read_bytes()
                 == (dest / f"{sid}.genemetrics.noparfix.tsv").read_bytes())
-        elif key.startswith("T12"):
+        elif case == "T12":
             add("deprecation warnings", "[deprecated] purity/ploidy supplied but ignored" in log
                 and "[deprecated] sample_sex supplied but ignored" in log)
             t1 = DL / "T" / "T1_lims_M"

@@ -1,0 +1,107 @@
+key	job	check	result	detail
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	job done	PASS	
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	all outputs	PASS	
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	edge correction (log)	PASS	
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	.cnr	PASS	
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	.cns	PASS	
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	.call.cns	PASS	
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	targetcoverage.cnn	PASS	batch-app coverage vs the coverage app (PoN input)
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	post-step decision	PASS	app 1, validation 1
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	genemetrics.tsv	PASS	
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	genemetrics.noparfix.tsv	PASS	
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	dropout_qc.tsv	PASS	header only
+T1_lims_M	job-JFPb1Y04YggpxQyQ566z9BFy	sex_qc	PASS	chrY Male, mismatch 0
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	job done	PASS	
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	all outputs	PASS	
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	edge correction (log)	PASS	
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	.cnr	PASS	
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	.cns	PASS	
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	.call.cns	PASS	
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	targetcoverage.cnn	PASS	batch-app coverage vs the coverage app (PoN input)
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	post-step decision	PASS	app 0, validation 0
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	genemetrics.tsv	PASS	
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	genemetrics.noparfix.tsv	PASS	
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	dropout_qc.tsv	PASS	header only
+T2_lims_F	job-JFPb1YQ4YggQBJVPx2XbY445	sex_qc	PASS	chrY Female, mismatch 0
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	job done	PASS	
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	all outputs	PASS	
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	edge correction (log)	PASS	
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	.cnr	PASS	
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	.cns	PASS	
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	.call.cns	PASS	
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	targetcoverage.cnn	PASS	batch-app coverage vs the coverage app (PoN input)
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	post-step decision	PASS	app 1, validation 1
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	genemetrics.tsv	PASS	
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	genemetrics.noparfix.tsv	PASS	
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	dropout_qc.tsv	PASS	header only
+T3_lims_U	job-JFPb1Yj4YggzfK7GgQB6BgX0	sex_qc	PASS	chrY Male, mismatch NA
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	job done	PASS	
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	all outputs	PASS	
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	edge correction (log)	PASS	
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	.cnr	PASS	
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	.cns	PASS	
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	.call.cns	PASS	
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	targetcoverage.cnn	PASS	batch-app coverage vs the coverage app (PoN input)
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	post-step decision	PASS	app 1, validation 1
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	genemetrics.tsv	PASS	
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	genemetrics.noparfix.tsv	PASS	
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	dropout_qc.tsv	PASS	header only
+T4_xxy	job-JFPb1Z84YggZf1Qjf29JqY2q	sex_qc	PASS	chrY Male, mismatch 0
+T5_override_M_on_U	job-JFPb1ZQ4YggXk5pKYZygGfVj	job done	PASS	
+T5_override_M_on_U	job-JFPb1ZQ4YggXk5pKYZygGfVj	all outputs	PASS	
+T5_override_M_on_U	job-JFPb1ZQ4YggXk5pKYZygGfVj	edge correction (log)	PASS	
+T5_override_M_on_U	job-JFPb1ZQ4YggXk5pKYZygGfVj	override applied	PASS	
+T5_override_M_on_U	job-JFPb1ZQ4YggXk5pKYZygGfVj	post-step (male)	PASS	
+T5_override_M_on_U	job-JFPb1ZQ4YggXk5pKYZygGfVj	sex_mismatch (declared M, no chrY)	PASS	Female
+T6_override_F_on_M	job-JFPb1b04YggjJJ1yKqQg1k8p	job done	PASS	
+T6_override_F_on_M	job-JFPb1b04YggjJJ1yKqQg1k8p	all outputs	PASS	
+T6_override_F_on_M	job-JFPb1b04YggjJJ1yKqQg1k8p	edge correction (log)	PASS	
+T6_override_F_on_M	job-JFPb1b04YggjJJ1yKqQg1k8p	override applied	PASS	
+T6_override_F_on_M	job-JFPb1b04YggjJJ1yKqQg1k8p	no post-step	PASS	
+T6_override_F_on_M	job-JFPb1b04YggjJJ1yKqQg1k8p	sex_mismatch (declared F, chrY present)	PASS	
+T7_bad_override	job-JFPb1b84YggjBzJ3Vf5gKP3q	job failed	PASS	failed
+T7_bad_override	job-JFPb1b84YggjBzJ3Vf5gKP3q	before coverage	PASS	
+T8_letter_from_bam_name	job-JFPb1bj4Yggb823Zzkbpb8yx	job done	PASS	
+T8_letter_from_bam_name	job-JFPb1bj4Yggb823Zzkbpb8yx	all outputs	PASS	
+T8_letter_from_bam_name	job-JFPb1bj4Yggb823Zzkbpb8yx	edge correction (log)	PASS	
+T8_letter_from_bam_name	job-JFPb1bj4Yggb823Zzkbpb8yx	.cnr	PASS	
+T8_letter_from_bam_name	job-JFPb1bj4Yggb823Zzkbpb8yx	.cns	PASS	
+T8_letter_from_bam_name	job-JFPb1bj4Yggb823Zzkbpb8yx	.call.cns	PASS	
+T8_letter_from_bam_name	job-JFPb1bj4Yggb823Zzkbpb8yx	.genemetrics.tsv	PASS	
+T8_letter_from_bam_name	job-JFPb1bj4Yggb823Zzkbpb8yx	sex source	PASS	bam_name
+T9_no_letter	job-JFPb1f04YggQy8vq00g7Q65P	job done	PASS	
+T9_no_letter	job-JFPb1f04YggQy8vq00g7Q65P	all outputs	PASS	
+T9_no_letter	job-JFPb1f04YggQy8vq00g7Q65P	edge correction (log)	PASS	
+T9_no_letter	job-JFPb1f04YggQy8vq00g7Q65P	.cnr	PASS	
+T9_no_letter	job-JFPb1f04YggQy8vq00g7Q65P	.cns	PASS	
+T9_no_letter	job-JFPb1f04YggQy8vq00g7Q65P	.call.cns	PASS	
+T9_no_letter	job-JFPb1f04YggQy8vq00g7Q65P	.genemetrics.tsv	PASS	
+T9_no_letter	job-JFPb1f04YggQy8vq00g7Q65P	sex source	PASS	cnvkit_inference
+T10_parx_empty	job-JFPb1fQ4YggvY4QJ792XYF1G	job done	PASS	
+T10_parx_empty	job-JFPb1fQ4YggvY4QJ792XYF1G	all outputs	PASS	
+T10_parx_empty	job-JFPb1fQ4YggvY4QJ792XYF1G	edge correction (log)	PASS	
+T10_parx_empty	job-JFPb1fQ4YggvY4QJ792XYF1G	parx warning	PASS	
+T10_parx_empty	job-JFPb1fQ4YggvY4QJ792XYF1G	no post-step	PASS	
+T10_parx_empty	job-JFPb1fQ4YggvY4QJ792XYF1G	noparfix = genemetrics	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	job done	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	all outputs	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	edge correction (log)	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	.cnr	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	.cns	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	.call.cns	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	targetcoverage.cnn	PASS	batch-app coverage vs the coverage app (PoN input)
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	post-step decision	PASS	app 0, validation 0
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	genemetrics.tsv	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	genemetrics.noparfix.tsv	PASS	
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	dropout_qc.tsv	PASS	header only
+T11_mask_off_masked_sample	job-JFPb1fj4YggVVPJx0YJ4v7v8	sex_qc	PASS	chrY Female, mismatch NA
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	job done	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	all outputs	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	edge correction (log)	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	deprecation warnings	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	.cnr = T1	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	.cns = T1	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	.call.cns = T1	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	.genemetrics.tsv = T1	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	.genemetrics.noparfix.tsv = T1	PASS	
+T12_deprecated_inputs	job-JFPb1g04Yggf6q8K1FZ3qBQZ	.sex_qc.tsv = T1	PASS	
