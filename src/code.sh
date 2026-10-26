@@ -67,7 +67,7 @@ main() {
     # ── Upload outputs ────────────────────────────────────────────────────────
     upload() {   # upload OUTPUT_NAME FILE: upload the file and add it as a job output
         local id
-        id=$(dx upload "$2" --brief)     # assigned first, so a failed upload stops the job under set -e
+        id=$(dx upload "$2" --wait --brief)   # assigned first, so a failed upload stops the job under set -e
         dx-jobutil-add-output "$1" "${id}" --class=file
     }
     upload copy_ratios          "${sample_id}.cnr"                       # unmasked
