@@ -324,6 +324,14 @@ def test_uploaded_files_are_the_final_versions(tmp_path):
     assert "=== Done:" in run.stdout
 
 
+def test_uploads_wait_for_finalisation(tmp_path):
+    run = run_app(tmp_path)
+    assert run.returncode == 0, run.stderr
+    uploads = [c for c in run.dx if c[0] == "upload"]
+    assert len(uploads) == len(run.outputs) == len(ALL_OUTPUTS)
+    assert all(c[2:] == ["--wait", "--brief"] for c in uploads)
+
+
 def test_missing_output_file_fails_the_job(tmp_path):
     # a failed dx upload must stop the job, not add an empty output
     run = run_app(tmp_path, stub_env={"STUB_SKIP_OUTPUT": "sex_qc"})

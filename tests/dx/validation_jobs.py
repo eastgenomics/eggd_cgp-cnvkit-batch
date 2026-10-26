@@ -116,10 +116,10 @@ def prepare(_):
 # ── build ────────────────────────────────────────────────────────────────────
 
 def build(_):
-    status = subprocess.run(["git", "status", "--porcelain", "--untracked-files=no"], cwd=REPO,
-                            capture_output=True, text=True).stdout
-    if status.strip():
-        sys.exit("commit the working tree first: the applet must be built from a recorded commit")
+    # every file dx build could include (tracked or untracked, not ignored) must be committed
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=REPO, capture_output=True, text=True, check=True)
+    if status.stdout.strip():
+        sys.exit("commit the working tree first: the applet must be built from a recorded commit\n" + status.stdout)
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True,
                          text=True).stdout.strip()
     folder = f"{ROOT}/applet/{sha}"
@@ -196,10 +196,21 @@ def jobs_path(which):
     return RUNS / f"{which}_jobs.tsv"
 
 
+JOB_COLS = ["key", "run", "sample", "sample_id", "extra", "job", "applet", "git_commit"]
+
+
 def submit(a):
+    """Submit the set with the applet in applet.txt. Rows already recorded are reused only when they were run
+    with that same applet (a resume); a set recorded with another applet must be reset explicitly (--reset)."""
     applet_id, sha = applet()
     inputs = read_tsv(RUNS / "inputs.tsv")
     done = {r["key"]: r for r in read_tsv(jobs_path(a.set))} if jobs_path(a.set).exists() else {}
+    stale = [k for k, r in done.items() if r.get("applet") != applet_id]
+    if stale and not a.reset:
+        sys.exit(f"{jobs_path(a.set)}: {len(stale)} recorded jobs were not run with {applet_id}; "
+                 "use --reset to start the set again with the current applet")
+    if a.reset:
+        done = {}
     todo = []
     if a.set == "T":
         for c in t_matrix(inputs):
@@ -217,8 +228,8 @@ def submit(a):
                "--property", f"git_commit={sha}", "--brief", "-y"]
         job = dx(*cmd).strip()
         rows.append(dict(key=key, run=row["run"], sample=row["sample"], sample_id=sample_id,
-                         extra=json.dumps(extra), job=job))
-        write_tsv(jobs_path(a.set), rows, ["key", "run", "sample", "sample_id", "extra", "job"])
+                         extra=json.dumps(extra), job=job, applet=applet_id, git_commit=sha))
+        write_tsv(jobs_path(a.set), rows, JOB_COLS)
         print(f"{key}\t{job}", flush=True)
     print(f"{a.set}: {len(rows)} jobs recorded in {jobs_path(a.set)}")
 
@@ -289,6 +300,12 @@ def check(a):
     fetched = prefetch(a.set, rows)
     desc = {job: d for job, (d, _) in fetched.items()}
     results = []
+    applet_id, _ = applet()
+    for r in rows:   # the checked jobs must be the recorded applet's (the one in applet.txt)
+        ran = desc[r["job"]].get("executable")
+        if ran != r["applet"] or ran != applet_id:
+            results.append((r["key"], r["job"], "applet", "FAIL", f"ran {ran}, recorded {r['applet']}, "
+                                                                     f"applet.txt {applet_id}"))
     male = {**run_local.treated_male_log("nonumi", True)}
     male_a0 = run_local.treated_male_log("nonumi", False)
     for r in rows:
@@ -378,6 +395,8 @@ def main():
     for c in ("submit", "status", "check"):
         p = sp.add_parser(c)
         p.add_argument("set", choices=("T", "E3"))
+        if c == "submit":
+            p.add_argument("--reset", action="store_true", help="discard the recorded jobs of the set")
     a = ap.parse_args()
     return {"prepare": prepare, "build": build, "submit": submit, "status": status, "check": check}[a.cmd](a)
 
