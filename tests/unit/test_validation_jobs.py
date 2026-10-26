@@ -81,6 +81,7 @@ def test_check_fails_a_job_run_by_another_executable(vj, monkeypatch):
     record(vj, "applet-NEW")
     desc = {"id": "job-OLD", "state": "failed", "executable": "applet-OTHER", "project": "p", "output": None}
     monkeypatch.setattr(vj, "prefetch", lambda which, rows: {"job-OLD": (desc, "")})
+    monkeypatch.setattr(vj.run_local, "treated_male_log", lambda data, mask: {})   # no validation data in CI
     assert vj.check(argparse.Namespace(set="E3")) == 1
     report = vj.read_tsv(vj.RUNS / "E3_report.tsv")
     assert any(r["check"] == "applet" and r["result"] == "FAIL" and "applet-OTHER" in r["detail"] for r in report)
