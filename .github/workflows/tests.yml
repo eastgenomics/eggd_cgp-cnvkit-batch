@@ -1,0 +1,25 @@
+name: tests
+
+# L0–L2 (PLAN_v2.1.0_build.md §3, §5): static checks, unit tests and argv-contract tests.
+# No Docker, validation data or DNAnexus access needed; L3–L6 run manually.
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install shellcheck and test dependencies
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q shellcheck
+          python -m pip install uv
+          uv pip install --system -r requirements-test.txt
+      - name: Validate dxapp.json
+        run: python -m json.tool dxapp.json > /dev/null
+      - name: Run L0–L2
+        run: python -m pytest -m "static or unit or pipeline"

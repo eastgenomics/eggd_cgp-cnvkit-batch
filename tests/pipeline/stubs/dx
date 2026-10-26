@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Test stub for the DNAnexus `dx` CLI (download / describe / upload only).
+
+Environment:
+  STUB_LOG       directory for the call log (dx.jsonl)
+  STUB_DX_FILES  JSON {file-id: local path} copied on `dx download`; other IDs get a placeholder file
+  STUB_DX_NAMES  JSON {file-id: name} returned by `dx describe --json`
+"""
+import json
+import os
+import shutil
+import sys
+
+args = sys.argv[1:]
+log_dir = os.environ["STUB_LOG"]
+with open(os.path.join(log_dir, "dx.jsonl"), "a") as fh:
+    fh.write(json.dumps(args) + "\n")
+
+
+def file_id(ref):
+    """Accept 'file-x', 'project-y:file-x' or a JSON '{"$dnanexus_link": "file-x"}' input value."""
+    ref = ref.strip()
+    if ref.startswith("{"):
+        ref = json.loads(ref)["$dnanexus_link"]
+        if isinstance(ref, dict):
+            ref = ref["id"]
+    return ref.rsplit(":", 1)[-1]
+
+
+cmd = args[0] if args else ""
+if cmd == "download":
+    fid = file_id(args[1])
+    out = args[args.index("-o") + 1]
+    files = json.loads(os.environ.get("STUB_DX_FILES", "{}"))
+    if fid in files:
+        shutil.copyfile(files[fid], out)
+    else:
+        with open(out, "w") as fh:
+            fh.write(f"stub content of {fid}\n")
+elif cmd == "describe":
+    fid = file_id(args[1])
+    names = json.loads(os.environ.get("STUB_DX_NAMES", "{}"))
+    print(json.dumps({"id": fid, "name": names.get(fid, fid)}))
+elif cmd == "upload":
+    path = args[1]
+    if not os.path.exists(path):
+        sys.exit(f"dx stub: upload: {path} does not exist")
+    with open(os.path.join(log_dir, "uploads.jsonl"), "a") as fh:
+        fh.write(json.dumps({"path": path, "name": os.path.basename(path)}) + "\n")
+    print("file-" + os.path.basename(path))
+else:
+    sys.exit(f"dx stub: unsupported command {args!r}")
