@@ -7,7 +7,7 @@
 **Progress (2026-10-26):** Phases 0–6 done on `dev_2.1.0` (local, not pushed), last commit `df4a412`.
 - L0–L2: 229 tests pass.
 - L3: the three ports are byte-identical to the originals on 226 × {UMI, non-UMI} sequencings.
-- L4: 4 × 16 sequencings, 512 checks pass (1 n/a by design); the BAM-start run passes, including coverage = coverage app.
+- L4: 4 × 16 sequencings, 512 checks: 511 PASS, 1 n/a by design (no UMI post-step baseline for a masked male), 0 FAIL; the BAM-start run passes, including coverage = coverage app.
 - The review-fix loop is clean after 3 rounds:
   - round 1: `sample_id` is now validated as a file stem; the reviewer's "code.sh never calls main" was rejected, because the DNAnexus executor calls `main`;
   - round 2: CNVkit now runs as the executor's user, so the PAR post-step can overwrite container-written files.
@@ -359,7 +359,7 @@ In order. Each change updates the L2 scenarios first, so the test fails, and the
   | Data | Mask | Sequencings | Start | Expected |
   |---|---|---|---|---|
   | UMI | on | 16 | coverage | U-M (= U-A0 where nothing is masked) |
-  | UMI | off | the 4 masked | coverage | U-A0 |
+  | UMI | off | 16 | coverage | U-A0 |
   | Non-UMI | off | 16 | coverage | N-A0 |
   | Non-UMI | off | 1 (25328S0023, male) | **BAM** | N-A0, and `.targetcoverage.cnn` byte-identical to `/coverage_nonumi/` (covers `coverage`, the BED dedup and coverage consistency, §0b) |
   | Non-UMI | on | 16 | coverage | N-M; 25330S0044 keeps its FGFR3 call (not masked on non-UMI) |
