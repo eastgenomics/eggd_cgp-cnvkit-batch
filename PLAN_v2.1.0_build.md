@@ -178,8 +178,8 @@ tests/
     validation/fetch_validation_data.sh        dx download into $CNVKIT_VALIDATION_DATA (gitignored)
     validation/test_equiv_*.py                 bundled scripts vs the analysis-repo originals (226 sequencings)
     harness/run_local.sh                       real image, real data, pipeline.sh, cmp against expected
-    dx/run_matrix.sh, dx/check_outputs.py      applet tests in the 003 project
-    dx/run_equivalence.sh, dx/compare_equivalence.py   the 226-sequencing test
+    dx/validation_jobs.py                      DNAnexus driver: prepare, build, submit T|E3, status, check
+    dx/runs/                                   inputs, applet ID, job IDs and check reports (the evidence)
 requirements-test.txt                          pytest only (the bundled scripts stay stdlib-only)
 ```
 
@@ -391,7 +391,7 @@ Also:
 Then run the pr-workflow review-fix loop locally.
 
 ### Phase 7: DNAnexus testing
-1. **L5 matrix.** `dx build` into a 003 project (`003_<YYMMDD>_eggd_cgp-cnvkit-batch_v2.1.0`). `tests/dx/run_matrix.sh` launches the runs below, and `check_outputs.py` downloads the outputs, compares them with the expected files and greps the job logs.
+1. **L5 matrix.** `tests/dx/validation_jobs.py build` builds the applet into the 004 validation project (`/batch_app_v2.1.0/`; 004 because this is validation evidence), `submit T` launches the runs below, and `check T` downloads the outputs, compares them with the expected files and greps the job logs.
    - Inputs are **non-UMI BAMs** (`nonumi_inventory.tsv` `new_bam`) with the validated non-UMI PoN of each sequencing, unless the row says otherwise.
    - Every run also checks `target_coverage` against `/coverage_nonumi/` (UMI runs: `/coverage/`).
 
@@ -410,7 +410,7 @@ Then run the pr-workflow review-fix loop locally.
    | T14 | Female-only | `noparfix` identical to `genemetrics` |
    | T15 | Production setting: the controlled PoN `file-JFP3fzQ455KjXVZ23JgX1gF2`, mask on, 25330S0048 (a PoN non-member) | N-M outputs (+17 genes vs N-A0) and the N-M `mask_qc.tsv` rows |
 
-2. **L6 full equivalence** (the DI-4094 comment; part of DI-4118). `run_equivalence.sh` runs all 226 from BAM in `project-JF3p1f04Yggp0vf3PYjy7Q0F` with the final inputs (`diploid_parx_genome=grch38`, no purity/ploidy, `drop_low_coverage=true`). `compare_equivalence.py` writes a report TSV and Markdown.
+2. **L6 full equivalence** (the DI-4094 comment; part of DI-4118). `validation_jobs.py submit E3` runs all 226 from BAM in `project-JF3p1f04Yggp0vf3PYjy7Q0F` with the final inputs (`diploid_parx_genome=grch38`, no purity/ploidy, `drop_low_coverage=true`); `check E3` writes `tests/dx/runs/E3_report.tsv`.
 
    | Run | Data | Mask | PoN | Expected | When |
    |---|---|---|---|---|---|

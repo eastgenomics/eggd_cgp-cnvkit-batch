@@ -23,6 +23,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -35,6 +36,8 @@ BIN = REPO / "resources" / "usr" / "local" / "bin"
 SAMPLES = REPO / "tests" / "harness" / "local_samples.tsv"
 IMAGE = "cgp-cnvkit:1.0.0"
 BED = "project-Fkb6Gkj433GVVvj73J7x8KbV:file-JBxvjg8433GxJf9Xypj5qyXf"   # atlas_cnvkit_bins_for_cgp_hg38_v1.1.bed
+PIPELINE_TIMEOUT = 2 * 3600   # seconds per sequencing; a hung container is reported as a FAIL (exit 124)
+_BED_LOCK = threading.Lock()
 QC_HEADER = "arm\tchromosome\tstart\tend\tgene\tlog2\traw_reads\treason\n"
 SEX_FIELDS_UMI = ["lims_sex", "raw_Y_logratio", "chrY_present", "chrY_sex", "raw_X_logratio", "raw_cnvkit_sex",
                   "cnr_X_logratio", "cnr_cnvkit_sex", "sex_mismatch"]
@@ -76,8 +79,10 @@ def fetch_bam_inputs(run, s):
         if len(found) != 1:
             raise RuntimeError(f"{s}: expected one {name}.bai, found {found}")
         subprocess.run(["dx", "download", "-f", found[0], "-o", str(bai)], check=True)
-    if not bed.exists():
-        subprocess.run(["dx", "download", "-f", BED, "-o", str(bed)], check=True)
+    with _BED_LOCK:   # shared by all workers: download once, publish the complete file atomically
+        if not bed.exists():
+            subprocess.run(["dx", "download", "-f", BED, "-o", f"{bed}.part"], check=True)
+            os.replace(f"{bed}.part", bed)
     return bam, bai, bed
 
 
@@ -105,7 +110,12 @@ def run_sample(row, a, out):
               f'run_cnvkit() {{ docker run --rm -u {os.getuid()}:{os.getgid()} -e HOME=/tmp -e MPLCONFIGDIR=/tmp '
               f'{extra} -v "$(pwd)":/work -w /work {IMAGE} cnvkit.py "$@"; }}; run_pipeline')
     with open(wd / "pipeline.log", "w") as log:
-        proc = subprocess.run(["bash", "-c", script], cwd=wd, env=env, stdout=log, stderr=subprocess.STDOUT)
+        try:
+            proc = subprocess.run(["bash", "-c", script], cwd=wd, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                  timeout=PIPELINE_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            log.write(f"\nTIMEOUT after {PIPELINE_TIMEOUT} s\n")
+            return 124
     return proc.returncode
 
 
@@ -189,6 +199,8 @@ def main(argv=None):
     rows = local_samples()
     if a.samples:
         rows = [r for r in rows if any(x in r["sample"] for x in a.samples)]
+        if not rows:
+            sys.exit("no local test sequencing matches --samples " + " ".join(a.samples))
     label = a.label or f"{a.data}-mask_{a.dropout_mask}-{a.start_from}"
     out = HARNESS / label
     out.mkdir(parents=True, exist_ok=True)

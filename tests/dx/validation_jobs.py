@@ -36,8 +36,21 @@ OUTPUTS = ["copy_ratios", "segments", "call_segments", "genemetrics", "genemetri
            "sex_check_mqc", "dropout_qc", "target_coverage", "scatter_png", "diagram_pdf"]
 
 
-def dx(*args, check=True):
-    p = subprocess.run(["dx", *args], capture_output=True, text=True)
+DX_TIMEOUT = 300          # seconds, for API calls; transfers and log streams get LONG_TIMEOUT
+LONG_TIMEOUT = 4 * 3600
+LONG = {"download", "upload", "watch", "build"}
+
+
+def dx(*args, check=True, timeout=None):
+    """Run the dx CLI; raise RuntimeError with its stderr on failure (non-zero exit when check, missing binary,
+    timeout)."""
+    timeout = timeout or (LONG_TIMEOUT if args and args[0] in LONG else DX_TIMEOUT)
+    try:
+        p = subprocess.run(["dx", *args], capture_output=True, text=True, timeout=timeout)
+    except FileNotFoundError:
+        raise RuntimeError("dx CLI not found on PATH (install dx-toolkit and log in)") from None
+    except subprocess.TimeoutExpired:
+        raise RuntimeError(f"dx {' '.join(args[:2])} timed out after {timeout} s") from None
     if check and p.returncode:
         raise RuntimeError(f"dx {' '.join(args)}: {p.stderr.strip()}")
     return p.stdout
@@ -124,11 +137,11 @@ def build(_):
                          text=True).stdout.strip()
     folder = f"{ROOT}/applet/{sha}"
     dx("mkdir", "-p", f"{PROJECT}:{folder}")
-    out = subprocess.run(["dx", "build", str(REPO), "--destination", f"{PROJECT}:{folder}/", "--overwrite"],
-                         capture_output=True, text=True)
-    if out.returncode:
-        sys.exit(out.stderr)
-    applet = json.loads(out.stdout)["id"]
+    try:
+        built = dx("build", str(REPO), "--destination", f"{PROJECT}:{folder}/", "--overwrite")
+    except RuntimeError as e:
+        sys.exit(f"dx build failed: {e}")
+    applet = json.loads(built)["id"]
     dx("set_properties", f"{PROJECT}:{applet}", f"git_commit={sha}")
     (RUNS / "applet.txt").write_text(f"{applet}\t{sha}\n")
     print(f"built {applet} from {sha}")
@@ -274,12 +287,19 @@ def fetch_job(job_id, dest):
         if refs:
             dx("download", *refs, "-o", f"{dest}/", "-f")
         (dest / ".downloaded").write_text("")
+    # the log is cached only when the job is finished and the log is not empty, so a partial or failed
+    # `dx watch` is fetched again next time instead of producing false log-check failures
     log = dest / "job.log"
-    if not log.exists():
-        log.write_text(dx("watch", job_id, "--get-streams", "--no-timestamps", "--no-job-info", "-q", check=False))
-    if d["state"] in ("done", "failed", "terminated"):
+    terminal = d["state"] in ("done", "failed", "terminated")
+    if log.exists():
+        text = log.read_text()
+    else:
+        text = dx("watch", job_id, "--get-streams", "--no-timestamps", "--no-job-info", "-q", check=False)
+        if terminal and text.strip():
+            log.write_text(text)
+    if terminal:
         cached.write_text(json.dumps(d))
-    return d, log.read_text()
+    return d, text
 
 
 def prefetch(which, rows, jobs=12):

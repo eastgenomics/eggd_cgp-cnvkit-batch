@@ -19,7 +19,7 @@ Runs the validated Atlas CGP configuration (`D_gcclip_on_s2` with the dropout ma
 - `diploid_parx_genome` input (`grch38` or empty): `--diploid-parx-genome` on fix, segment, call, genemetrics, diagram
   and the sex checks; warning when empty (DI-4097)
 - `sex_override` input (`male`/`female`/`M`/`F`; any other value fails the job) (DI-4099)
-- `dropout_mask` input (default `true`) and `dropout_mask.py`, a port of `deadprobe_mask.py mask M` @ `ddad79b`
+- `dropout_mask` input (default `true`; `false` = the validated configuration without the mask, arm A0) and `dropout_mask.py`, a port of `deadprobe_mask.py mask M` @ `ddad79b`
   (DI-4139)
 - `cnvkit.py sex` on the raw coverage and on the `.cnr` (DI-4102)
 - PAR post-step, `cnvkit_parfix.py` (port of `genemetrics_parfix.py` @ `f933f7a`) (DI-4101)

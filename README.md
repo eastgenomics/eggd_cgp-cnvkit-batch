@@ -65,7 +65,8 @@ estimate and hides focal events on the same chromosome (e.g. the common inherite
 DEL_chr12_9b8e999a, impairs chr12 calling). An **autosomal** probe gets weight 0 in the segmentation input when all
 hold: `.cnr` log2 < −3; it is in a run of ≤ 2 adjacent probes with log2 < −3 (longer runs are callable deletions and
 are kept); fewer than 10 raw read-equivalents (depth × length / 144) in `<s>.targetcoverage.cnn`. chrX/chrY are never
-masked. `dropout_qc` lists the masked probes. `dropout_mask=false` segments the unmasked `.cnr` (v2.0.x behaviour).
+masked. `dropout_qc` lists the masked probes. `dropout_mask=false` segments the unmasked `.cnr`: the validated final configuration without the mask (arm A0),
+not v2.0.x (v2.1.0 keeps edge correction, `--diploid-parx-genome` and the other changes).
 
 ### Copy-number calls
 

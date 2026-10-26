@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 REPO = Path(__file__).resolve().parents[2]
-DATA = Path(os.environ.get("CNVKIT_VALIDATION_DATA", REPO / "tests" / ".data" / "validation"))
+DATA = Path(os.environ.get("CNVKIT_VALIDATION_DATA", REPO / "tests" / ".data" / "validation")).resolve()
 BIN = REPO / "resources" / "usr" / "local" / "bin"
 REFERENCE = REPO / "tests" / "validation" / "reference_scripts"
 DATASETS = ("umi", "nonumi")
