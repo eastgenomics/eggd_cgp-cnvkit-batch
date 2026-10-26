@@ -48,19 +48,41 @@ ALL_OUTPUTS = {"copy_ratios": f"{S}.cnr", "segments": f"{S}.cns", "call_segments
 
 @pytest.mark.parametrize("name, inputs, expected", [
     ("defaults", {}, expected_calls()),
-    ("purity_above_gate", {"purity": 0.5, "ploidy": 3.1},
-     expected_calls(call_extra=("--purity", "0.5", "--ploidy", "3.1"))),
-    ("purity_default_ploidy", {"purity": 0.62},
-     expected_calls(call_extra=("--purity", "0.62", "--ploidy", "2"))),
-    ("purity_at_gate", {"purity": 0.4, "ploidy": 3.1}, expected_calls()),
-    ("purity_below_gate", {"purity": 0.25}, expected_calls()),
     ("sample_sex", {"sample_sex": "male"}, expected_calls(diagram_extra=("--sample-sex", "male"))),
     ("no_drop_low_coverage", {"drop_low_coverage": False}, expected_calls(segment_extra=())),
 ])
-def test_v202_command_lines(tmp_path, name, inputs, expected):
+def test_command_lines(tmp_path, name, inputs, expected):
     run = run_app(tmp_path, inputs)
     assert run.returncode == 0, run.stderr
     assert run.cnvkit == expected
+
+
+# ── DI-4121: no purity/ploidy; the inputs are deprecated and ignored (D4) ──
+
+PURITY_WARNING = "[deprecated] purity/ploidy supplied but ignored"
+
+
+@pytest.mark.parametrize("inputs", [{"purity": 0.5, "ploidy": 3.1}, {"purity": 0.62}, {"purity": 0.25},
+                                    {"ploidy": 2}])
+def test_purity_ploidy_ignored(tmp_path, inputs):
+    run = run_app(tmp_path, inputs)
+    assert run.returncode == 0, run.stderr
+    assert run.cnvkit == expected_calls()
+    assert PURITY_WARNING in run.stdout
+
+
+def test_no_purity_no_warning(tmp_path):
+    run = run_app(tmp_path)
+    assert run.returncode == 0, run.stderr
+    assert PURITY_WARNING not in run.stdout
+
+
+def test_ploidy_has_no_default():
+    # a default would make DNAnexus set ploidy on every job, and the deprecation warning would always fire
+    from apprun import DXAPP
+    spec = {i["name"]: i for i in DXAPP["inputSpec"]}
+    assert "default" not in spec["ploidy"] and spec["ploidy"]["optional"] is True
+    assert spec["purity"]["optional"] is True
 
 
 # ── DI-4097: diploid_parx_genome ─────────────────────────────────────────────
@@ -88,7 +110,7 @@ def test_parx_rejects_other_values(tmp_path):
     assert run.cnvkit == [["version"]]
 
 
-def test_v202_docker_invocation(tmp_path):
+def test_docker_invocation(tmp_path):
     run = run_app(tmp_path)
     assert run.returncode == 0, run.stderr
     assert {d["image"] for d in run.docker} == {IMAGE}
@@ -99,14 +121,14 @@ def test_v202_docker_invocation(tmp_path):
             "-o", "cnvkit-image.tar.gz"] in run.dx
 
 
-def test_v202_outputs(tmp_path):
+def test_outputs(tmp_path):
     run = run_app(tmp_path)
     assert run.returncode == 0, run.stderr
     assert {k: v["value"] for k, v in run.outputs.items()} == {k: f"file-{v}" for k, v in ALL_OUTPUTS.items()}
     assert {v["class"] for v in run.outputs.values()} == {"file"}
 
 
-def test_v202_bed_deduplicated(tmp_path):
+def test_bed_deduplicated(tmp_path):
     run = run_app(tmp_path)
     assert run.returncode == 0, run.stderr
     assert (run.workdir / "panel.bed").read_text().splitlines() == [
@@ -114,12 +136,12 @@ def test_v202_bed_deduplicated(tmp_path):
 
 
 @pytest.mark.parametrize("bai_name", [f"{S}.bam.bai", f"{S}.bai"])
-def test_v202_bai_name_accepted(tmp_path, bai_name):
+def test_bai_name_accepted(tmp_path, bai_name):
     run = run_app(tmp_path, names={"file-BAI": bai_name})
     assert run.returncode == 0, run.stderr
 
 
-def test_v202_bai_name_mismatch_fails(tmp_path):
+def test_bai_name_mismatch_fails(tmp_path):
     run = run_app(tmp_path, names={"file-BAI": "other-sample.bam.bai"})
     assert run.returncode != 0
     assert "does not match BAM filename" in run.stdout
@@ -128,7 +150,7 @@ def test_v202_bai_name_mismatch_fails(tmp_path):
 
 
 @pytest.mark.parametrize("failing, missing", [("scatter", "scatter_png"), ("diagram", "diagram_pdf")])
-def test_v202_plot_failure_is_not_fatal(tmp_path, failing, missing):
+def test_plot_failure_is_not_fatal(tmp_path, failing, missing):
     run = run_app(tmp_path, fail=(failing,))
     assert run.returncode == 0, run.stderr
     assert f"[{failing}] WARNING" in run.stdout
@@ -136,7 +158,7 @@ def test_v202_plot_failure_is_not_fatal(tmp_path, failing, missing):
 
 
 @pytest.mark.parametrize("failing", ["coverage", "fix", "segment", "call", "genemetrics"])
-def test_v202_analysis_failure_is_fatal(tmp_path, failing):
+def test_analysis_failure_is_fatal(tmp_path, failing):
     run = run_app(tmp_path, fail=(failing,))
     assert run.returncode != 0
     assert run.outputs == {}

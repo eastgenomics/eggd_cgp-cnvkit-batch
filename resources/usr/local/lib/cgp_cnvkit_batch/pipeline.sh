@@ -12,7 +12,7 @@
 #     SAMPLE_ID           output file stem (required)
 #     NPROC               CPUs for coverage/segment (default: nproc)
 #     DIPLOID_PARX_GENOME grch38 | '' (DI-4097): --diploid-parx-genome on fix, segment, call, genemetrics, diagram
-#     PURITY, PLOIDY      optional tumour purity / ploidy
+#     PURITY, PLOIDY      deprecated (DI-4121, D4): ignored, with a warning when supplied
 #     SAMPLE_SEX          optional chromosomal sex for the diagram
 #     DROP_LOW_COVERAGE   true (default) | false
 #   outputs (files in the current directory)
@@ -44,6 +44,11 @@ run_pipeline() {
             echo "ERROR: diploid_parx_genome '${DIPLOID_PARX_GENOME}' is not supported (grch38, or empty)"
             return 1 ;;
     esac
+
+    if [ -n "${PURITY:-}${PLOIDY:-}" ]; then
+        echo "[deprecated] purity/ploidy supplied but ignored (DI-4121): CNVkit calls are made without"
+        echo "[deprecated] --purity/--ploidy, as validated; PURPLE is the source of absolute copy number."
+    fi
 
     dedup_bed panel.bed
 
@@ -81,22 +86,10 @@ run_pipeline() {
     N_SEGS=$(grep -vc "^chromosome" "${s}.cns" || true)
     echo "[segment] Segments: ${N_SEGS}"
 
-    # ── Call: integer CN ──────────────────────────────────────────────────────
-    echo "[call] Calling integer CNs..."
-    local -a call_args=()
-    if [ -n "${PURITY:-}" ]; then
-        if [ "$(python3 -c "print('yes' if float('${PURITY}') > 0.40 else 'no')")" = "yes" ]; then
-            call_args=(--purity "${PURITY}" --ploidy "${PLOIDY:-2}")
-            echo "[call] Using PURPLE purity=${PURITY}, ploidy=${PLOIDY:-2}"
-        else
-            echo "[call] purity=${PURITY} <= 0.40 — log2R thresholds only"
-        fi
-    else
-        echo "[call] No purity supplied — log2R thresholds only"
-    fi
+    # ── Call: log2 ratio thresholds (no --purity/--ploidy; DI-4121) ──────────
+    echo "[call] Calling copy number from log2 ratio thresholds..."
     run_cnvkit call \
         "${s}.cns" \
-        "${call_args[@]}" \
         "${px[@]}" \
         -o "${s}.call.cns"
 

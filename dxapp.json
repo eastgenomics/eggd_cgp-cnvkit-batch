@@ -64,17 +64,16 @@
     {
       "name": "purity",
       "class": "float",
-      "label": "Tumour purity (0\u20131)",
+      "label": "Tumour purity (deprecated, ignored)",
       "optional": true,
-      "help": "Estimated tumour purity from PURPLE or another purity tool. When supplied and purity > 0.40, used for absolute integer CN calling (cnvkit.py call --purity). At purity \u2264 0.40, PURPLE's purity estimate is unreliable for WGD samples in FFPE cohorts; log2R threshold calling is used instead. If omitted, log2R thresholds are used for all calls."
+      "help": "Deprecated in 2.1.0 and ignored (DI-4121): CNVkit calls are made without --purity, as validated, and PURPLE is the source of absolute copy number. Kept so existing workflow wiring still runs; a warning is logged when it is supplied. To be removed in the next major version."
     },
     {
       "name": "ploidy",
       "class": "float",
-      "label": "Tumour ploidy",
-      "default": 2,
+      "label": "Tumour ploidy (deprecated, ignored)",
       "optional": true,
-      "help": "Estimated tumour ploidy from PURPLE. Accepts PURPLE's raw float output (e.g. 3.1). Used alongside purity for integer CN calling. Ignored if purity is not supplied or purity \u2264 0.40."
+      "help": "Deprecated in 2.1.0 and ignored (DI-4121): CNVkit calls are made without --ploidy, as validated. Kept so existing workflow wiring still runs; a warning is logged when it is supplied. To be removed in the next major version."
     },
     {
       "name": "sample_sex",
@@ -118,7 +117,7 @@
       "patterns": [
         "*.call.cns"
       ],
-      "help": "Segments annotated with integer copy-number calls. Purity/ploidy-corrected when purity > 0.40; log2R thresholds otherwise."
+      "help": "Segments annotated with copy-number calls from the log2 ratio thresholds (CNVkit fc65941 defaults: amplification >= 0.7, gain >= 0.2, loss < -0.25, deletion < -1.1). No purity or ploidy adjustment."
     },
     {
       "name": "scatter_png",
