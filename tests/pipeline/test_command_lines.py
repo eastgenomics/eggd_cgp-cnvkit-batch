@@ -357,6 +357,14 @@ def test_code_sh_always_starts_from_the_bam(tmp_path):
     assert run.subcommand("coverage")
 
 
+@pytest.mark.parametrize("bad", ["a/b", "..", ".", "-starts-with-dash", "has space", ""])
+def test_bad_sample_id_fails_before_analysis(tmp_path, bad):
+    run = run_app(tmp_path, {"sample_id": bad})
+    assert run.returncode != 0
+    assert "sample_id" in run.stdout
+    assert run.cnvkit == []
+
+
 def test_version():
     from apprun import DXAPP
     assert DXAPP["version"] == "2.1.0" and DXAPP["properties"]["githubRelease"] == "2.1.0"

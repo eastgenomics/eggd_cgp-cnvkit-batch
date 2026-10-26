@@ -6,8 +6,15 @@ set -eo pipefail
 
 CGP_CNVKIT_LIB="${CGP_CNVKIT_LIB:-/usr/local/lib/cgp_cnvkit_batch}"
 
+# The DNAnexus bash executor calls main(); this file must not call it.
 main() {
     echo "=== CGP CNVkit batch: ${sample_id} ==="
+    # sample_id is the stem of every file name: letters, digits and . _ - only, not starting with - or .
+    if [[ ! "${sample_id}" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]]; then
+        echo "ERROR: sample_id '${sample_id}' is not a valid file stem (letters, digits, '.', '_', '-';"
+        echo "       must not start with '.' or '-')"
+        exit 1
+    fi
     echo "Instance: $(hostname); CPUs: $(nproc)"
     # shellcheck source=SCRIPTDIR/../resources/usr/local/lib/cgp_cnvkit_batch/pipeline.sh
     source "${CGP_CNVKIT_LIB}/pipeline.sh"
