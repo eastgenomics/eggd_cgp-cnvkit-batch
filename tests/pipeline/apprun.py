@@ -85,6 +85,8 @@ def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/
         "STUB_DX_FILES": json.dumps(dx_files),
         "STUB_DX_NAMES": json.dumps(base_names),
         "STUB_FAIL": ",".join(fail),
+        # on the worker, resources/ is unpacked to /; here the library is read from the repo
+        "CGP_CNVKIT_LIB": str(REPO / "resources" / "usr" / "local" / "lib" / "cgp_cnvkit_batch"),
     }
     env.update({k: _env_value(v) for k, v in base_inputs.items()})
     proc = subprocess.run(

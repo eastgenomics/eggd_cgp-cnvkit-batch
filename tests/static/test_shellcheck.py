@@ -15,9 +15,8 @@ pytestmark = pytest.mark.static
 SCRIPTS = [REPO / "src" / "code.sh", *sorted((REPO / "resources").rglob("*.sh")),
            *sorted((REPO / "tests").rglob("*.sh"))]
 
-# v2.0.2 code.sh is not clean (unquoted word splitting: SC2046, SC2086; SC2002). The Phase 2 refactor fixes it;
-# strict, so the suite fails as soon as it is clean and this entry must be removed.
-KNOWN_UNCLEAN = {"src/code.sh": "v2.0.2: SC2046/SC2086/SC2002, fixed by the Phase 2 refactor"}
+# Scripts with known findings, as {path: reason}; strict xfail, so an entry must go once the script is clean.
+KNOWN_UNCLEAN = {}
 
 
 def _param(p):
@@ -29,6 +28,6 @@ def _param(p):
 @pytest.mark.skipif(shutil.which("shellcheck") is None, reason="shellcheck not installed")
 @pytest.mark.parametrize("script", [_param(p) for p in SCRIPTS])
 def test_shellcheck(script):
-    proc = subprocess.run(["shellcheck", "-s", "bash", "-e", "SC2154", str(script)],
+    proc = subprocess.run(["shellcheck", "-x", "-s", "bash", "-e", "SC2154", str(script)],
                           capture_output=True, text=True)
     assert proc.returncode == 0, proc.stdout
