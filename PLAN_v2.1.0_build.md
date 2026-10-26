@@ -4,6 +4,16 @@
 **Jira:** DI-4094; subtasks DI-4096 to DI-4104, DI-4121 and DI-4139. D1–D7 accepted 2026-10-25 (DI-4094 comment 72470); D8–D11 (comment 72472). Non-UMI re-validation: DI-4118 (comments 72480, 72481).
 **Starting point:** `main` at `7559cc2` (v2.0.2). There are no tests, test directory or CI. The app is a single `src/code.sh` (167 lines) that mixes dx I/O, Docker calls and logic.
 
+**Progress (2026-10-26):** Phases 0–6 done on `dev_2.1.0` (local, not pushed), last commit `df4a412`.
+- L0–L2: 229 tests pass.
+- L3: the three ports are byte-identical to the originals on 226 × {UMI, non-UMI} sequencings.
+- L4: 4 × 16 sequencings, 512 checks pass (1 n/a by design); the BAM-start run passes, including coverage = coverage app.
+- The review-fix loop is clean after 3 rounds:
+  - round 1: `sample_id` is now validated as a file stem; the reviewer's "code.sh never calls main" was rejected, because the DNAnexus executor calls `main`;
+  - round 2: CNVkit now runs as the executor's user, so the PAR post-step can overwrite container-written files.
+
+Next: Phase 7 (DNAnexus testing), which needs a go-ahead because it creates a 003 project and runs jobs.
+
 ---
 
 ## 0. Facts checked while writing this plan (2026-10-25)
