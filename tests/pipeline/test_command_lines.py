@@ -258,6 +258,58 @@ def test_parfix_non_par_difference_fails_the_job(tmp_path):
     assert run.outputs == {}
 
 
+# ── DI-4103: sex QC (D8) ─────────────────────────────────────────────────────
+
+def sex_qc_row(run, sample):
+    import csv
+    with open(run.workdir / f"{sample}.sex_qc.tsv") as fh:
+        rows = list(csv.DictReader(fh, delimiter="\t"))
+    assert len(rows) == 1
+    return rows[0]
+
+
+@pytest.mark.parametrize("sample, override, raw_y, cnr_sex, expect", [
+    (SAMPLE, None, "-1.13", "Male",
+     dict(lims_sex="M", applied_sex="male", applied_source="sample_name", chrY_sex="Male", sex_mismatch="0",
+          par_fix_applied="1")),
+    (SAMPLE, None, "-22.0", "Female",                 # LIMS M but no chrY: flagged
+     dict(lims_sex="M", applied_sex="male", chrY_sex="Female", sex_mismatch="1", par_fix_applied="1")),
+    (SAMPLE, "female", "-1.13", "Male",               # override female on a chrY-present sample: flagged
+     dict(lims_sex="M", applied_sex="female", applied_source="override", sex_mismatch="1", par_fix_applied="0")),
+    (U_SAMPLE, None, "-1.13", "Male",
+     dict(lims_sex="U", applied_sex="cnvkit_inferred(Male)", applied_source="cnvkit_inference",
+          sex_mismatch="NA", par_fix_applied="1")),
+    (U_SAMPLE, None, "-25.0", "Female",
+     dict(lims_sex="U", applied_sex="cnvkit_inferred(Female)", sex_mismatch="NA", par_fix_applied="0")),
+])
+def test_sex_qc(tmp_path, sample, override, raw_y, cnr_sex, expect):
+    from apprun import default_inputs
+    inputs, names = default_inputs(sample_id=sample)
+    inputs.update(PARX)
+    if override:
+        inputs["sex_override"] = override
+    env = dict(masked_fixtures(tmp_path), STUB_RAW_Y=raw_y, STUB_CNR_SEX=cnr_sex)
+    run = run_app(tmp_path, inputs, names, stub_env=env)
+    assert run.returncode == 0, run.stderr
+    row = sex_qc_row(run, sample)
+    for k, v in expect.items():
+        assert row[k] == v, k
+    assert row["dropout_probes"] == "1" and row["par_span_segments"] == "0" and row["run"] == ""
+    mqc = (run.workdir / f"{sample}.sex_check_mqc.tsv").read_text().splitlines()
+    assert mqc[0] == "# id: 'cnvkit_sex_check'"
+    assert mqc[5].split("\t")[0] == sample and mqc[5].split("\t")[-1] == "1"
+    assert "[sex] chrY " in run.stdout
+
+
+def test_sex_qc_failure_is_fatal(tmp_path):
+    # a sex table for another sample (e.g. a mis-named file) must stop the job
+    other = tmp_path / "other_sex.tsv"
+    other.write_text("sample\tsex\tX_logratio\tY_logratio\nother.targetcoverage.cnn\tMale\t-1\t-1\n")
+    run = run_app(tmp_path, stub_env={"STUB_OUTPUT_SEX": str(other)})
+    assert run.returncode != 0
+    assert run.outputs == {}
+
+
 def test_ploidy_has_no_default():
     # a default would make DNAnexus set ploidy on every job, and the deprecation warning would always fire
     from apprun import DXAPP

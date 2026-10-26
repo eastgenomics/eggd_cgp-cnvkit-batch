@@ -20,8 +20,9 @@
 #     DROPOUT_MASK        true (default) | false (DI-4139, D7): segment on the dropout-masked copy of the .cnr
 #   outputs (files in the current directory)
 #     <SAMPLE_ID>.targetcoverage.cnn .cnr .cns .call.cns .genemetrics.tsv .genemetrics.noparfix.tsv
-#     .dropout_qc.tsv .sex_raw.tsv .sex_cnr.tsv, and .scatter.png / .diagram.pdf when the (non-fatal) plots succeed
-#   outputs (shell variables)  N_SEGS, N_GENES, SEX_ARG, SEX_SOURCE, LIMS_SEX, DROPOUT_PROBES,
+#     .dropout_qc.tsv .sex_raw.tsv .sex_cnr.tsv .sex_qc.tsv .sex_check_mqc.tsv, and .scatter.png / .diagram.pdf
+#     when the (non-fatal) plots succeed
+#   outputs (shell variables)  N_SEGS, N_GENES, SEX_ARG, SEX_SOURCE, LIMS_SEX, DECLARED_SEX, DROPOUT_PROBES,
 #                              PAR_FIX_APPLIED, PAR_SPAN_SEGMENTS
 
 dedup_bed() {
@@ -57,6 +58,7 @@ run_pipeline() {
     SEX_ARG=$(cut -f1 <<< "${resolved}")
     SEX_SOURCE=$(cut -f2 <<< "${resolved}")
     LIMS_SEX=$(cut -f3 <<< "${resolved}")
+    DECLARED_SEX=$(cut -f4 <<< "${resolved}")
     local -a x=()
     if [ -n "${SEX_ARG}" ]; then
         x=(-x "${SEX_ARG}")
@@ -208,4 +210,13 @@ run_pipeline() {
 
     N_GENES=$(( $(wc -l < "${s}.genemetrics.tsv") - 1 ))
     echo "[genemetrics] Genes with CN change (threshold 0.3): ${N_GENES}"
+
+    # ── Sex QC (DI-4103) ──────────────────────────────────────────────────────
+    # sex_mismatch: declared sex (override, else LIMS) vs chrY presence in the raw coverage (Y log-ratio > -5).
+    local override_sex=U
+    [ "${SEX_SOURCE}" = "override" ] && override_sex="${DECLARED_SEX}"
+    cnvkit_sex_qc.py qc --sample-id "${s}" --raw-sex "${s}.sex_raw.tsv" --cnr-sex "${s}.sex_cnr.tsv" \
+        --lims-sex "${LIMS_SEX}" --override-sex "${override_sex}" --applied-source "${SEX_SOURCE}" \
+        --par-fix-applied "${PAR_FIX_APPLIED}" --par-span-segments "${PAR_SPAN_SEGMENTS}" \
+        --dropout-probes "${DROPOUT_PROBES}" --out "${s}"
 }
