@@ -33,6 +33,9 @@ def expected_calls(parx=False, sex="male", s=None, segment_extra=("--drop-low-co
         ["fix", f"{S}.targetcoverage.cnn", "empty.antitargetcoverage.cnn", "reference.cnn", *px, "-o", f"{S}.cnr"],
         ["segment", f"{S}.cnr", "--method", "cbs", "--drop-outliers", "10", *segment_extra, *px,
          "--processes", "4", "-o", f"{S}.cns"],
+        # DI-4102: sex checks on raw coverage (chrY presence) and on the .cnr (chrX; post-step decision)
+        ["sex", f"{S}.targetcoverage.cnn", *px, "-o", f"{S}.sex_raw.tsv"],
+        ["sex", f"{S}.cnr", *px, "-o", f"{S}.sex_cnr.tsv"],
         ["call", f"{S}.cns", *px, *x, "-o", f"{S}.call.cns"],
         # scatter takes neither --diploid-parx-genome nor a sex argument in fc65941
         ["scatter", f"{S}.cnr", "-s", f"{S}.cns", "--trend", "--y-min", "-3", "--y-max", "3",
@@ -205,7 +208,7 @@ def test_plot_failure_is_not_fatal(tmp_path, failing, missing):
     assert set(run.outputs) == set(ALL_OUTPUTS) - {missing}
 
 
-@pytest.mark.parametrize("failing", ["coverage", "fix", "segment", "call", "genemetrics"])
+@pytest.mark.parametrize("failing", ["coverage", "fix", "segment", "sex", "call", "genemetrics"])
 def test_analysis_failure_is_fatal(tmp_path, failing):
     run = run_app(tmp_path, fail=(failing,))
     assert run.returncode != 0

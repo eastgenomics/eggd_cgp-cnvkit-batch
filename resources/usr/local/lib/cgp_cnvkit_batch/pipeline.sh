@@ -108,6 +108,13 @@ run_pipeline() {
     N_SEGS=$(grep -vc "^chromosome" "${s}.cns" || true)
     echo "[segment] Segments: ${N_SEGS}"
 
+    # ── Sex checks (DI-4102) ──────────────────────────────────────────────────
+    # Raw coverage keeps the non-PAR chrY bins (chrY presence: the QC flag); the .cnr has chrX only (the
+    # PoN masks chrY), so its call is the guess genemetrics makes without -x (the PAR post-step decision).
+    echo "[sex] cnvkit.py sex on the raw coverage and on the .cnr..."
+    run_cnvkit sex "${s}.targetcoverage.cnn" "${px[@]}" -o "${s}.sex_raw.tsv"
+    run_cnvkit sex "${s}.cnr" "${px[@]}" -o "${s}.sex_cnr.tsv"
+
     # ── Call: log2 ratio thresholds (no --purity/--ploidy; DI-4121) ──────────
     echo "[call] Calling copy number from log2 ratio thresholds..."
     run_cnvkit call \

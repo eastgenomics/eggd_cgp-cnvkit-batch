@@ -56,11 +56,12 @@ def _env_value(value):
     return str(value)
 
 
-def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/code.sh"):
+def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/code.sh", stub_env=None):
     """Run `main` from `script` in a fresh work directory under tmp_path.
 
     inputs: input name -> value (None removes an input); names: file ID -> name returned by `dx describe`;
-    fail: CNVkit subcommands that should exit 1; files: file ID -> local fixture copied on download.
+    fail: CNVkit subcommands that should exit 1; files: file ID -> local fixture copied on download;
+    stub_env: extra stub settings, e.g. {"STUB_CNR_SEX": "Female"}.
     """
     base_inputs, base_names = default_inputs()
     if inputs:
@@ -88,6 +89,7 @@ def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/
         # on the worker, resources/ is unpacked to /; here the library is read from the repo
         "CGP_CNVKIT_LIB": str(REPO / "resources" / "usr" / "local" / "lib" / "cgp_cnvkit_batch"),
     }
+    env.update(stub_env or {})
     env.update({k: _env_value(v) for k, v in base_inputs.items()})
     proc = subprocess.run(
         ["bash", "-c", 'set -eo pipefail; source "$1"; main', "app", str(REPO / script)],

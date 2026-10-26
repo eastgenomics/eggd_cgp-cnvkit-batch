@@ -8,6 +8,8 @@ mounted at the container working directory, so the app's later steps find their 
 Environment:
   STUB_LOG   directory for the call log
   STUB_FAIL  comma-separated CNVkit subcommands that exit 1 (failure injection)
+  STUB_RAW_SEX, STUB_RAW_Y   `cnvkit.py sex` on a .targetcoverage.cnn: sex call and Y log-ratio (Male, -1.13)
+  STUB_CNR_SEX               `cnvkit.py sex` on a .cnr: sex call (Male)
 """
 import json
 import os
@@ -72,7 +74,15 @@ out = None
 for flag in ("-o", "--output"):
     if flag in cmd:
         out = cmd[cmd.index(flag) + 1]
-if out:
+if sub == "sex" and out:
+    sample = cmd[2]
+    if sample.endswith(".cnr"):
+        row = f"{sample}\t{os.environ.get('STUB_CNR_SEX', 'Male')}\t-0.945\tnan"
+    else:
+        row = f"{sample}\t{os.environ.get('STUB_RAW_SEX', 'Male')}\t-0.971\t{os.environ.get('STUB_RAW_Y', '-1.13')}"
+    with open(os.path.join(host, out), "w") as fh:
+        fh.write(OUTPUT["sex"][0] + "\n" + row + "\n")
+elif out:
     header, rows = OUTPUT.get(sub, ("placeholder", []))
     with open(os.path.join(host, out), "w") as fh:
         fh.write("\n".join([header] + rows) + "\n")
