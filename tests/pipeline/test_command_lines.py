@@ -59,7 +59,11 @@ PARX_WARNING = "[parx] WARNING: diploid_parx_genome is empty"
 
 ALL_OUTPUTS = {"copy_ratios": f"{S}.cnr", "segments": f"{S}.cns", "call_segments": f"{S}.call.cns",
                "genemetrics": f"{S}.genemetrics.tsv", "scatter_png": f"{S}.scatter.png",
-               "diagram_pdf": f"{S}.diagram.pdf"}
+               "diagram_pdf": f"{S}.diagram.pdf",
+               # DI-4104
+               "genemetrics_noparfix": f"{S}.genemetrics.noparfix.tsv", "sex_qc": f"{S}.sex_qc.tsv",
+               "sex_check_mqc": f"{S}.sex_check_mqc.tsv", "dropout_qc": f"{S}.dropout_qc.tsv",
+               "target_coverage": f"{S}.targetcoverage.cnn"}
 
 
 @pytest.mark.parametrize("name, inputs, expected", [
@@ -308,6 +312,28 @@ def test_sex_qc_failure_is_fatal(tmp_path):
     run = run_app(tmp_path, stub_env={"STUB_OUTPUT_SEX": str(other)})
     assert run.returncode != 0
     assert run.outputs == {}
+
+
+def test_uploaded_files_are_the_final_versions(tmp_path):
+    # genemetrics = the post-step read-out; copy_ratios = the unmasked .cnr
+    env = dict(parfix_fixtures(tmp_path), **masked_fixtures(tmp_path))
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode == 0, run.stderr
+    assert (run.workdir / f"{S}.genemetrics.tsv").read_text() == GM_H + TP53
+    assert run.uploads.count(f"{S}.cnr") == 1 and f"{S}.seg_input.cnr" not in run.uploads
+    assert "=== Done:" in run.stdout
+
+
+def test_missing_output_file_fails_the_job(tmp_path):
+    # a failed dx upload must stop the job, not add an empty output
+    run = run_app(tmp_path, stub_env={"STUB_SKIP_OUTPUT": "sex_qc"})
+    assert run.returncode != 0
+    assert "sex_qc" not in run.outputs
+
+
+def test_version():
+    from apprun import DXAPP
+    assert DXAPP["version"] == "2.1.0" and DXAPP["properties"]["githubRelease"] == "2.1.0"
 
 
 def test_ploidy_has_no_default():

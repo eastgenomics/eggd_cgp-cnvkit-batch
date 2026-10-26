@@ -1,11 +1,11 @@
 {
   "name": "eggd_cgp-cnvkit-batch",
   "title": "eggd_cgp-cnvkit-batch",
-  "summary": "Per-sample CNVkit analysis: coverage, PoN normalisation, CBS segmentation, integer CN calling, scatter plot and gene metrics for one tumour-only CGP panel sample.",
+  "summary": "Per-sample CNVkit analysis for one tumour-only CGP panel sample (validated Atlas configuration): coverage, PoN normalisation, dropout mask, CBS segmentation, copy-number calls, gene metrics with the PAR post-step, sex QC and plots.",
   "dxapi": "1.0.0",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "properties": {
-    "githubRelease": "2.0.2"
+    "githubRelease": "2.1.0"
   },
   "inputSpec": [
     {
@@ -114,7 +114,7 @@
       "patterns": [
         "*.cnr"
       ],
-      "help": "Per-bin log2 copy ratios after PoN normalisation. Input to downstream segmentation and visualisation."
+      "help": "Per-bin log2 copy ratios after PoN normalisation (edge correction on). The unmasked file: the dropout mask only changes the segmentation input."
     },
     {
       "name": "segments",
@@ -123,7 +123,7 @@
       "patterns": [
         "*.cns"
       ],
-      "help": "CBS-segmented copy-number profile. One row per segment."
+      "help": "CBS-segmented copy-number profile, one row per segment, segmented on the dropout-masked copy of the .cnr (when dropout_mask is true)."
     },
     {
       "name": "call_segments",
@@ -161,7 +161,52 @@
       "patterns": [
         "*.genemetrics.tsv"
       ],
-      "help": "Tab-separated gene-level summary: gene, log2R, depth, weight, CN, probes. Filtered to genes with |log2R| > 0.3 and \u22653 probes."
+      "help": "Tab-separated gene-level summary (gene, log2, depth, weight, cn, probes, ...): genes with |log2| >= 0.3 and >= 3 probes. For samples treated as male, after the PAR post-step (PAR genes such as CRLF2 corrected for CNVkit's +1 chrX shift)."
+    },
+    {
+      "name": "genemetrics_noparfix",
+      "class": "file",
+      "label": "Gene metrics before the PAR post-step (.tsv)",
+      "patterns": [
+        "*.genemetrics.noparfix.tsv"
+      ],
+      "help": "The genemetrics read-out before the PAR post-step. Identical to genemetrics when the post-step did not run (samples not treated as male, or no diploid_parx_genome)."
+    },
+    {
+      "name": "sex_qc",
+      "class": "file",
+      "label": "Sex QC (.tsv)",
+      "patterns": [
+        "*.sex_qc.tsv"
+      ],
+      "help": "One row: LIMS sex, applied sex and its source (override / sample_name / bam_name / cnvkit_inference), chrY presence in the raw coverage (Y log-ratio > -5), X log-ratios from the raw coverage and the .cnr, sex_mismatch (declared sex vs chrY; 1 needs review), par_fix_applied, par_span_segments and dropout_probes."
+    },
+    {
+      "name": "sex_check_mqc",
+      "class": "file",
+      "label": "Sex QC for MultiQC (_mqc.tsv)",
+      "patterns": [
+        "*.sex_check_mqc.tsv"
+      ],
+      "help": "MultiQC custom-content table (id cnvkit_sex_check): lims_sex, chrY_sex, sex_mismatch, the X/Y log-ratios, applied_sex and dropout_probes."
+    },
+    {
+      "name": "dropout_qc",
+      "class": "file",
+      "label": "Masked probe dropouts (.tsv)",
+      "patterns": [
+        "*.dropout_qc.tsv"
+      ],
+      "help": "One row per probe masked before segmentation (arm, chromosome, start, end, gene, log2, raw_reads, reason; arm is always M). Header only when nothing is masked or dropout_mask is false."
+    },
+    {
+      "name": "target_coverage",
+      "class": "file",
+      "label": "On-target coverage (.targetcoverage.cnn)",
+      "patterns": [
+        "*.targetcoverage.cnn"
+      ],
+      "help": "Raw on-target coverage from cnvkit.py coverage: the input of fix and of the raw-coverage sex check; kept for audit and PoN rebuilds."
     }
   ],
   "runSpec": {

@@ -52,25 +52,24 @@ main() {
         run_pipeline
 
     # ── Upload outputs ────────────────────────────────────────────────────────
-    copy_ratios=$(dx   upload "${sample_id}.cnr"             --brief)
-    segments=$(dx      upload "${sample_id}.cns"             --brief)
-    call_segments=$(dx upload "${sample_id}.call.cns"        --brief)
-    genemetrics=$(dx   upload "${sample_id}.genemetrics.tsv" --brief)
+    upload() {   # upload OUTPUT_NAME FILE: upload the file and add it as a job output
+        local id
+        id=$(dx upload "$2" --brief)     # assigned first, so a failed upload stops the job under set -e
+        dx-jobutil-add-output "$1" "${id}" --class=file
+    }
+    upload copy_ratios          "${sample_id}.cnr"                       # unmasked
+    upload segments             "${sample_id}.cns"                       # segmented on the dropout-masked input
+    upload call_segments        "${sample_id}.call.cns"
+    upload genemetrics          "${sample_id}.genemetrics.tsv"           # after the PAR post-step
+    upload genemetrics_noparfix "${sample_id}.genemetrics.noparfix.tsv"
+    upload sex_qc               "${sample_id}.sex_qc.tsv"
+    upload sex_check_mqc        "${sample_id}.sex_check_mqc.tsv"
+    upload dropout_qc           "${sample_id}.dropout_qc.tsv"
+    upload target_coverage      "${sample_id}.targetcoverage.cnn"
+    if [ -f "${sample_id}.scatter.png" ]; then upload scatter_png "${sample_id}.scatter.png"; fi
+    if [ -f "${sample_id}.diagram.pdf" ]; then upload diagram_pdf "${sample_id}.diagram.pdf"; fi
 
-    dx-jobutil-add-output copy_ratios   "${copy_ratios}"   --class=file
-    dx-jobutil-add-output segments      "${segments}"      --class=file
-    dx-jobutil-add-output call_segments "${call_segments}" --class=file
-    dx-jobutil-add-output genemetrics   "${genemetrics}"   --class=file
-
-    if [ -f "${sample_id}.scatter.png" ]; then
-        scatter_png=$(dx upload "${sample_id}.scatter.png" --brief)
-        dx-jobutil-add-output scatter_png "${scatter_png}" --class=file
-    fi
-
-    if [ -f "${sample_id}.diagram.pdf" ]; then
-        diagram_pdf=$(dx upload "${sample_id}.diagram.pdf" --brief)
-        dx-jobutil-add-output diagram_pdf "${diagram_pdf}" --class=file
-    fi
-
-    echo "=== Done: ${sample_id} — ${N_SEGS} segments, ${N_GENES} genes with CN change ==="
+    echo "=== Done: ${sample_id} — ${N_SEGS} segments, ${N_GENES} genes with CN change;" \
+         "sex ${SEX_ARG:-inferred} (${SEX_SOURCE}); PAR post-step ${PAR_FIX_APPLIED};" \
+         "masked probes ${DROPOUT_PROBES} ==="
 }

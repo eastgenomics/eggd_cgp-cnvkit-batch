@@ -43,6 +43,9 @@ elif cmd == "describe":
     print(json.dumps({"id": fid, "name": names.get(fid, fid)}))
 elif cmd == "upload":
     path = args[1]
+    skip = os.environ.get("STUB_SKIP_OUTPUT")
+    if skip and path.endswith(f".{skip}.tsv"):
+        sys.exit(f"dx stub: upload of {path} failed (injected)")
     if not os.path.exists(path):
         sys.exit(f"dx stub: upload: {path} does not exist")
     with open(os.path.join(log_dir, "uploads.jsonl"), "a") as fh:
