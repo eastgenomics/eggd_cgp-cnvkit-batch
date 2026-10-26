@@ -78,7 +78,7 @@ def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/
     dx_files = {"file-BAITS": str(FIXTURES / "panel.bed")}
     dx_files.update(files or {})
     env = {
-        "PATH": f"{STUBS}:{os.environ['PATH']}",
+        "PATH": f"{STUBS}:{REPO / 'resources' / 'usr' / 'local' / 'bin'}:{os.environ['PATH']}",
         "HOME": str(tmp_path),
         "LC_ALL": "C.UTF-8",
         "STUB_LOG": str(log),

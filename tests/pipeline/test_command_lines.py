@@ -8,18 +8,24 @@ import pytest
 
 from apprun import SAMPLE, run_app
 
+F_SAMPLE = "138076232-25178S0009-26CGPV1-9197-F-96770770"
+U_SAMPLE = "135024088-25021S0072-26CGPVal1SHv150kb-9999-U-1111"
+
 pytestmark = pytest.mark.pipeline
 
 S = SAMPLE
 IMAGE = "cgp-cnvkit:1.0.0"
 
 
-def expected_calls(parx=False, segment_extra=("--drop-low-coverage",), call_extra=(), diagram_extra=()):
-    """The full CNVkit call sequence for sample S, with --processes from the stubbed nproc (4).
+def expected_calls(parx=False, sex="male", s=None, segment_extra=("--drop-low-coverage",)):
+    """The full CNVkit call sequence for a sample (default S, LIMS M), with --processes from the stubbed nproc (4).
 
     parx: diploid_parx_genome=grch38 (DI-4097): --diploid-parx-genome on fix, segment, call, diagram, genemetrics.
+    sex:  the applied sex (DI-4100): -x on call, diagram and genemetrics; None = no -x (CNVkit infers).
     """
+    S = s or SAMPLE
     px = ("--diploid-parx-genome", "grch38") if parx else ()
+    x = ("-x", sex) if sex else ()
     return [
         ["version"],
         ["coverage", "tumour.bam", "panel.bed", "--processes", "4", "--output", f"{S}.targetcoverage.cnn"],
@@ -27,13 +33,13 @@ def expected_calls(parx=False, segment_extra=("--drop-low-coverage",), call_extr
         ["fix", f"{S}.targetcoverage.cnn", "empty.antitargetcoverage.cnn", "reference.cnn", *px, "-o", f"{S}.cnr"],
         ["segment", f"{S}.cnr", "--method", "cbs", "--drop-outliers", "10", *segment_extra, *px,
          "--processes", "4", "-o", f"{S}.cns"],
-        ["call", f"{S}.cns", *call_extra, *px, "-o", f"{S}.call.cns"],
+        ["call", f"{S}.cns", *px, *x, "-o", f"{S}.call.cns"],
         # scatter takes neither --diploid-parx-genome nor a sex argument in fc65941
         ["scatter", f"{S}.cnr", "-s", f"{S}.cns", "--trend", "--y-min", "-3", "--y-max", "3",
          "--fig-size", "14", "4", "--title", S, "-o", f"{S}.scatter.png"],
         ["diagram", f"{S}.cnr", "-s", f"{S}.call.cns", "--threshold", "0.5", "--min-probes", "3",
-         *diagram_extra, *px, "--title", S, "-o", f"{S}.diagram.pdf"],
-        ["genemetrics", f"{S}.cnr", "-s", f"{S}.call.cns", "-t", "0.3", "--min-probes", "3", *px,
+         *px, *x, "--title", S, "-o", f"{S}.diagram.pdf"],
+        ["genemetrics", f"{S}.cnr", "-s", f"{S}.call.cns", "-t", "0.3", "--min-probes", "3", *px, *x,
          "-o", f"{S}.genemetrics.tsv"],
     ]
 
@@ -48,7 +54,6 @@ ALL_OUTPUTS = {"copy_ratios": f"{S}.cnr", "segments": f"{S}.cns", "call_segments
 
 @pytest.mark.parametrize("name, inputs, expected", [
     ("defaults", {}, expected_calls()),
-    ("sample_sex", {"sample_sex": "male"}, expected_calls(diagram_extra=("--sample-sex", "male"))),
     ("no_drop_low_coverage", {"drop_low_coverage": False}, expected_calls(segment_extra=())),
 ])
 def test_command_lines(tmp_path, name, inputs, expected):
@@ -75,6 +80,49 @@ def test_no_purity_no_warning(tmp_path):
     run = run_app(tmp_path)
     assert run.returncode == 0, run.stderr
     assert PURITY_WARNING not in run.stdout
+
+
+# ── DI-4098 / DI-4099 / DI-4100: sex sources, -x on call, genemetrics, diagram (D2, D9) ──
+
+@pytest.mark.parametrize("sample, bam, override, sex, log", [
+    (SAMPLE, None, None, "male", "[sex] applied: -x male (source: sample_name; LIMS M)"),
+    (F_SAMPLE, None, None, "female", "[sex] applied: -x female (source: sample_name; LIMS F)"),
+    (U_SAMPLE, None, None, None, "[sex] applied: no -x, CNVkit infers the sex (source: cnvkit_inference; LIMS U)"),
+    (U_SAMPLE, None, "male", "male", "[sex] applied: -x male (source: override; LIMS U)"),
+    (SAMPLE, None, "F", "female", "[sex] applied: -x female (source: override; LIMS M)"),
+    ("25328S0023", f"{SAMPLE}.bam", None, "male", "[sex] applied: -x male (source: bam_name; LIMS M)"),
+    ("25328S0023", "25328S0023.bam", None, None,
+     "[sex] applied: no -x, CNVkit infers the sex (source: cnvkit_inference; LIMS U)"),
+])
+def test_sex_resolution(tmp_path, sample, bam, override, sex, log):
+    from apprun import default_inputs
+    inputs, names = default_inputs(sample_id=sample, bam_name=bam)
+    if override is not None:
+        inputs["sex_override"] = override
+    run = run_app(tmp_path, inputs, names)
+    assert run.returncode == 0, run.stderr
+    assert run.cnvkit == expected_calls(sex=sex, s=sample)
+    assert log in run.stdout
+
+
+@pytest.mark.parametrize("bad", ["X", "unknown", "U"])
+def test_bad_sex_override_fails_before_analysis(tmp_path, bad):
+    run = run_app(tmp_path, {"sex_override": bad})
+    assert run.returncode != 0
+    assert "not accepted" in run.stdout + run.stderr
+    assert run.cnvkit == [["version"]]
+    assert run.outputs == {}
+
+
+def test_sample_sex_deprecated_and_ignored(tmp_path):
+    # sample_sex is wired from PURPLE's inferred sex in the current workflow: it must not reach CNVkit (D2)
+    from apprun import default_inputs
+    inputs, names = default_inputs(sample_id=U_SAMPLE)
+    inputs["sample_sex"] = "male"
+    run = run_app(tmp_path, inputs, names)
+    assert run.returncode == 0, run.stderr
+    assert run.cnvkit == expected_calls(sex=None, s=U_SAMPLE)
+    assert "[deprecated] sample_sex supplied but ignored" in run.stdout
 
 
 def test_ploidy_has_no_default():

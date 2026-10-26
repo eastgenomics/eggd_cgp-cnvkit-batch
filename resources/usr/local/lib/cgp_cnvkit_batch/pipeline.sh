@@ -13,12 +13,14 @@
 #     NPROC               CPUs for coverage/segment (default: nproc)
 #     DIPLOID_PARX_GENOME grch38 | '' (DI-4097): --diploid-parx-genome on fix, segment, call, genemetrics, diagram
 #     PURITY, PLOIDY      deprecated (DI-4121, D4): ignored, with a warning when supplied
-#     SAMPLE_SEX          optional chromosomal sex for the diagram
+#     BAM_NAME            BAM file name: LIMS-letter fallback when SAMPLE_ID has no 5th field (DI-4098)
+#     SEX_OVERRIDE        male | female | M | F | '' (DI-4099, D9): wins over the LIMS letter
+#     SAMPLE_SEX_DEPRECATED  the old sample_sex input (wired from PURPLE): ignored, with a warning (D2)
 #     DROP_LOW_COVERAGE   true (default) | false
 #   outputs (files in the current directory)
 #     <SAMPLE_ID>.targetcoverage.cnn .cnr .cns .call.cns .genemetrics.tsv, and .scatter.png / .diagram.pdf when
 #     the (non-fatal) plots succeed
-#   outputs (shell variables)  N_SEGS, N_GENES
+#   outputs (shell variables)  N_SEGS, N_GENES, SEX_ARG, SEX_SOURCE, LIMS_SEX
 
 dedup_bed() {
     # Deduplicate BED intervals: some panel BEDs have identical coordinates from multiple transcript
@@ -44,6 +46,26 @@ run_pipeline() {
             echo "ERROR: diploid_parx_genome '${DIPLOID_PARX_GENOME}' is not supported (grch38, or empty)"
             return 1 ;;
     esac
+
+    # Sex (DI-4098, DI-4099, DI-4100): override, else the LIMS letter (field 5 of the sample ID, else of the BAM
+    # name), else no -x (CNVkit infers). The applied sex goes to call, genemetrics and diagram as -x.
+    local resolved
+    resolved=$(cnvkit_sex_qc.py resolve --sample-id "${s}" --bam-name "${BAM_NAME:-}" \
+        --override "${SEX_OVERRIDE:-}") || return 1
+    SEX_ARG=$(cut -f1 <<< "${resolved}")
+    SEX_SOURCE=$(cut -f2 <<< "${resolved}")
+    LIMS_SEX=$(cut -f3 <<< "${resolved}")
+    local -a x=()
+    if [ -n "${SEX_ARG}" ]; then
+        x=(-x "${SEX_ARG}")
+        echo "[sex] applied: -x ${SEX_ARG} (source: ${SEX_SOURCE}; LIMS ${LIMS_SEX})"
+    else
+        echo "[sex] applied: no -x, CNVkit infers the sex (source: ${SEX_SOURCE}; LIMS ${LIMS_SEX})"
+    fi
+    if [ -n "${SAMPLE_SEX_DEPRECATED:-}" ]; then
+        echo "[deprecated] sample_sex supplied but ignored (D2): it is wired from PURPLE's inferred sex;"
+        echo "[deprecated] use sex_override to set the sex explicitly."
+    fi
 
     if [ -n "${PURITY:-}${PLOIDY:-}" ]; then
         echo "[deprecated] purity/ploidy supplied but ignored (DI-4121): CNVkit calls are made without"
@@ -91,6 +113,7 @@ run_pipeline() {
     run_cnvkit call \
         "${s}.cns" \
         "${px[@]}" \
+        "${x[@]}" \
         -o "${s}.call.cns"
 
     # ── Scatter plot (non-fatal) ──────────────────────────────────────────────
@@ -109,17 +132,15 @@ run_pipeline() {
     echo "[scatter] WARNING: scatter plot failed (non-fatal): $(tail -1 /tmp/scatter_err.txt)"
 
     # ── Diagram plot (chromosome ideogram with gene labels; non-fatal) ────────
-    # --sample-sex corrects the chrX/Y baseline; omitted when no sex is supplied (CNVkit guesses).
+    # -x corrects the chrX/Y baseline, as in call and genemetrics, so the plot matches the calls.
     echo "[diagram] Generating chromosome diagram..."
-    local -a sex_args=()
-    [ -n "${SAMPLE_SEX:-}" ] && sex_args=(--sample-sex "${SAMPLE_SEX}")
     run_cnvkit diagram \
         "${s}.cnr" \
         -s "${s}.call.cns" \
         --threshold 0.5 \
         --min-probes 3 \
-        "${sex_args[@]}" \
         "${px[@]}" \
+        "${x[@]}" \
         --title "${s}" \
         -o "${s}.diagram.pdf" 2>/tmp/diagram_err.txt || \
     echo "[diagram] WARNING: diagram failed (non-fatal): $(tail -1 /tmp/diagram_err.txt)"
@@ -132,6 +153,7 @@ run_pipeline() {
         -t 0.3 \
         --min-probes 3 \
         "${px[@]}" \
+        "${x[@]}" \
         -o "${s}.genemetrics.tsv"
     N_GENES=$(( $(wc -l < "${s}.genemetrics.tsv") - 1 ))
     echo "[genemetrics] Genes with CN change (threshold 0.3): ${N_GENES}"

@@ -76,11 +76,18 @@
       "help": "Deprecated in 2.1.0 and ignored (DI-4121): CNVkit calls are made without --ploidy, as validated. Kept so existing workflow wiring still runs; a warning is logged when it is supplied. To be removed in the next major version."
     },
     {
+      "name": "sex_override",
+      "class": "string",
+      "label": "Sex override (male or female)",
+      "optional": true,
+      "help": "Chromosomal sex to use instead of the LIMS letter: male, female, M or F (case-insensitive); any other value fails the job before analysis. Leave empty in routine use. Without it the sex comes from the LIMS letter, field 5 of the '-'-split sample ID (or of the BAM name when the sample ID has fewer than 5 fields): M gives -x male, F gives -x female, anything else no -x (CNVkit infers the sex from chrX). Must not be wired from PURPLE's inferred sex."
+    },
+    {
       "name": "sample_sex",
       "class": "string",
-      "label": "Sample chromosomal sex (male or female)",
+      "label": "Sample sex (deprecated, ignored)",
       "optional": true,
-      "help": "Chromosomal sex of the sample. Used to correct the chrX/Y baseline in the diagram plot (cnvkit.py diagram --sample-sex). If omitted, CNVkit guesses from chrX/Y coverage. Note: cnvkit.py scatter does not support sex correction \u2014 male samples will show a chrX band at log2R \u2248 -1 due to the mixed-gender PoN median."
+      "help": "Deprecated in 2.1.0 and ignored (D2): it is wired from PURPLE's inferred sex, which must not override the LIMS sex. Use sex_override instead. Kept so existing workflow wiring still runs; a warning is logged when it is supplied. To be removed in the next major version."
     },
     {
       "name": "drop_low_coverage",
@@ -137,7 +144,7 @@
         "*.diagram.pdf"
       ],
       "optional": true,
-      "help": "Chromosome-level ideogram with gene labels at CN-change sites (threshold 0.5 log2R, minimum 3 probes). Sex-corrected when sample_sex is supplied."
+      "help": "Chromosome-level ideogram with gene labels at CN-change sites (threshold 0.5 log2R, minimum 3 probes), with the same -x and --diploid-parx-genome as the calls."
     },
     {
       "name": "genemetrics",
