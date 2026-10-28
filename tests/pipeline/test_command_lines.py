@@ -1,6 +1,6 @@
 """L2: the CNVkit command lines the app runs (argv contract), recorded for v2.0.2.
 
-These tests fix the behaviour of v2.0.2 (`main` @ 7559cc2) before any change (PLAN_v2.1.0_build.md, Phase 1).
+These tests recorded the behaviour of v2.0.2 (`main` @ 7559cc2) before any change.
 Phase 2 (refactor) must keep them passing unchanged. Phase 4 edits them, one Jira subtask at a time, into the
 v2.1.0 contract. The expected argv lists are written out from reading the code, not captured from a run.
 """
@@ -355,7 +355,9 @@ def test_start_from_coverage(tmp_path):
 def test_start_from_coverage_needs_the_file(tmp_path):
     from apprun import run_pipeline_direct
     run = run_pipeline_direct(tmp_path, {"SAMPLE_ID": S, "START_FROM": "coverage"}, files={"reference.cnn": "x\n"})
-    assert run.returncode != 0 and "targetcoverage.cnn is missing" in run.stdout
+    assert run.returncode != 0
+    assert "targetcoverage.cnn is missing" in run.stderr
+    assert "ERROR:" not in run.stdout
     assert run.cnvkit == []
 
 
@@ -370,7 +372,9 @@ def test_code_sh_always_starts_from_the_bam(tmp_path):
 def test_bad_sample_id_fails_before_analysis(tmp_path, bad):
     run = run_app(tmp_path, {"sample_id": bad})
     assert run.returncode != 0
-    assert "sample_id" in run.stdout
+    assert "ERROR: sample_id" in run.stderr
+    assert "must not start with" in run.stderr
+    assert "ERROR:" not in run.stdout
     assert run.cnvkit == []
 
 
@@ -408,7 +412,8 @@ def test_parx_rejects_other_values(tmp_path):
     # dxapp.json restricts the value with choices; the app checks it too, before any analysis step
     run = run_app(tmp_path, {"diploid_parx_genome": "hg19"})
     assert run.returncode != 0
-    assert "diploid_parx_genome" in run.stdout + run.stderr
+    assert "ERROR: diploid_parx_genome 'hg19' is not supported" in run.stderr
+    assert "ERROR:" not in run.stdout
     assert run.cnvkit == [["version"]]
 
 
@@ -454,7 +459,9 @@ def test_bai_name_accepted(tmp_path, bai_name):
 def test_bai_name_mismatch_fails(tmp_path):
     run = run_app(tmp_path, names={"file-BAI": "other-sample.bam.bai"})
     assert run.returncode != 0
-    assert "does not match BAM filename" in run.stdout
+    assert "does not match BAM filename" in run.stderr
+    assert "Expected" in run.stderr
+    assert "ERROR:" not in run.stdout
     assert run.cnvkit == [["version"]]       # fails before any analysis step
     assert run.outputs == {}
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Download the validation data for the L3/L4 tests into $CNVKIT_VALIDATION_DATA (default tests/.data/validation).
 
-Sources are pinned by DNAnexus file ID and sha256 (PLAN_v2.1.0_build.md §0b). Members of the outputs tarballs are
+Sources are pinned by DNAnexus file ID and sha256. Members of the outputs tarballs are
 also checked against the sha256 lists published with them. Stdlib only; needs a logged-in `dx`.
 
 Layout written (<run> = 0734_Val1_50kb | 0786_V1 | 0797_V2 | 0811_V3, <s> = sample ID):

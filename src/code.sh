@@ -11,8 +11,8 @@ main() {
     echo "=== CGP CNVkit batch: ${sample_id} ==="
     # sample_id is the stem of every file name: letters, digits and . _ - only, not starting with - or .
     if [[ ! "${sample_id}" =~ ^[A-Za-z0-9_][A-Za-z0-9._-]*$ ]]; then
-        echo "ERROR: sample_id '${sample_id}' is not a valid file stem (letters, digits, '.', '_', '-';"
-        echo "       must not start with '.' or '-')"
+        echo "ERROR: sample_id '${sample_id}' is not a valid file stem (letters, digits, '.', '_', '-';" >&2
+        echo "       must not start with '.' or '-')" >&2
         exit 1
     fi
     echo "Instance: $(hostname); CPUs: $(nproc)"
@@ -44,8 +44,8 @@ main() {
     BAM_NAME=$(dx describe "${tumour_bam}" --json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
     BAI_NAME=$(dx describe "${tumour_bai}" --json | python3 -c "import sys,json; print(json.load(sys.stdin)['name'])")
     if [[ "${BAI_NAME}" != "${BAM_NAME}.bai" && "${BAI_NAME}" != "${BAM_NAME%.bam}.bai" ]]; then
-        echo "ERROR: BAI filename '${BAI_NAME}' does not match BAM filename '${BAM_NAME}'"
-        echo "       Expected '${BAM_NAME}.bai' or '${BAM_NAME%.bam}.bai'"
+        echo "ERROR: BAI filename '${BAI_NAME}' does not match BAM filename '${BAM_NAME}'" >&2
+        echo "       Expected '${BAM_NAME}.bai' or '${BAM_NAME%.bam}.bai'" >&2
         exit 1
     fi
     echo "[inputs] BAM/BAI pair validated: ${BAM_NAME} / ${BAI_NAME}"

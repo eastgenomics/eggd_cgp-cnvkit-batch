@@ -41,7 +41,7 @@ EMPTY_GM_HEADER = 'gene\tchromosome\tstart\tend\tlog2\n'   # CNVkit's header whe
 
 
 def par_state(chrom, start, end):
-    """'in' (wholly inside a PAR), 'span' (overlaps a PAR boundary) or 'out'."""
+    """'in' (wholly inside PAR boundaries), 'span' (overlaps a PAR boundary) or 'out' (wholly outside PAR boundaries)."""
     if chrom != 'chrX':
         return 'out'
     for a, b in PARS:

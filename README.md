@@ -16,13 +16,19 @@ md5 `b4a373729d9282ce0a0ed80fd29f6d0a`), built from 124 FFPE specimens with GC c
 
 ## What does this app do?
 
-For one sample, inside the `cgp-cnvkit:1.0.0` image (CNVkit `fc65941`). `<s>` is `sample_id`; `PARX` is
-`--diploid-parx-genome grch38` when `diploid_parx_genome=grch38` (required for Atlas); `-x` is the applied sex (below).
+Runs the full CNVkit per-sample analysis pipeline against a pre-built PoN reference.
+
+For one sample, each of the steps below is run. CNVkit steps run inside the `cgp-cnvkit:1.0.0` image (CNVkit
+`fc65941`); additional processing uses Python scripts on the worker.
+
+- `<s>` is `sample_id`.
+- `PARX` is `--diploid-parx-genome grch38` when `-idiploid_parx_genome=grch38` (required for Atlas).
+- `-x` is the applied sex (below).
 
 ```
 coverage     tumour.bam panel.bed --processes N                        -> <s>.targetcoverage.cnn
 fix          <s>.targetcoverage.cnn empty.antitarget reference.cnn PARX -> <s>.cnr     (edge correction on)
-dropout mask dropout_mask.py mask M <s>.cnr <s>.targetcoverage.cnn <s> - <s>.seg_input.cnr <s>.dropout_qc.tsv
+dropout mask dropout_mask.py mask <s>.cnr <s>.targetcoverage.cnn <s>.seg_input.cnr <s>.dropout_qc.tsv
 segment      <s>.seg_input.cnr --method cbs --drop-outliers 10 --drop-low-coverage PARX -> <s>.cns
 sex          <s>.targetcoverage.cnn PARX -> <s>.sex_raw.tsv;  <s>.cnr PARX -> <s>.sex_cnr.tsv
 call         <s>.cns PARX [-x]                                         -> <s>.call.cns  (no --purity/--ploidy)
@@ -44,35 +50,41 @@ The applied sex is passed as `-x` to `call`, `genemetrics` and `diagram`. Preced
 1. `sex_override`: `male`, `female`, `M` or `F` (case-insensitive). Any other value fails the job before analysis.
 2. The LIMS letter: field 5 of the `-`-split `sample_id` (e.g. `140609591-25328S0023-26CGPV2-8475-M-96770770` → `M`),
    or of the BAM file name when `sample_id` has fewer than 5 fields. `M` → `-x male`, `F` → `-x female`.
-3. Otherwise no `-x`: CNVkit infers the sex from chrX (`applied_sex = cnvkit_inferred(...)`).
+3. Otherwise, including a LIMS letter of `U`, no `-x`: CNVkit infers the sex from chrX
+   (`applied_sex = cnvkit_inferred(...)`).
 
 `sample_sex` (wired from PURPLE's inferred sex in the current workflow) is ignored, with a warning.
 
 ### PAR post-step
 
-For a sample that `genemetrics` treats as male, CNVkit `fc65941` shifts every chrX bin and segment by +1.0, the
-pseudo-autosomal regions included, so PAR genes (on this panel, CRLF2) are reported 1.0 too high. A sample is treated
-as male when it gets `-x male`, or no `-x` and `cnvkit.py sex` on the `.cnr` reports Male. Then `cnvkit_parfix.py`
-subtracts 1.0 from the bins and segments **wholly inside** GRCh38 PAR1 `[10000, 2781479)` and PAR2
-`[155701382, 156030895)` in copies under `parfix/`, `genemetrics` is re-run there with the original arguments, and every
+For a sample that `genemetrics` treats as male, CNVkit `fc65941` shifts every chrX bin and segment by +1.0 so a
+normal male's single X does not look like a deletion. This includes the pseudo-autosomal regions, for which males
+already have two copies and do not require correction, so PAR genes (on this panel, CRLF2) are reported 1.0 too high.
+A sample is treated as male when it gets `-x male`, or no `-x` and `cnvkit.py sex` on the `.cnr` reports Male. To
+correct the PAR issue, `cnvkit_parfix.py` subtracts 1.0 from the bins and segments **wholly inside** GRCh38 PAR1
+`[10000, 2781479)` and PAR2 `[155701382, 156030895)` in copies under `parfix/`, `genemetrics` is re-run there with the
+original arguments, and every
 non-PAR row must be byte-identical to the original (the job fails otherwise). The corrected read-out is `genemetrics`;
 the uncorrected one is always written as `genemetrics_noparfix`. Without `diploid_parx_genome` no post-step runs.
 
 ### Dropout mask
 
-A probe dropout is 1–2 adjacent probes with almost no reads among normal neighbours; it inflates the CBS noise
-estimate and hides focal events on the same chromosome (e.g. the common inherited ETV6 deletion, gnomAD-SV
-DEL_chr12_9b8e999a, impairs chr12 calling). An **autosomal** probe gets weight 0 in the segmentation input when all
-hold: `.cnr` log2 < −3; it is in a run of ≤ 2 adjacent probes with log2 < −3 (longer runs are callable deletions and
-are kept); fewer than 10 raw read-equivalents (depth × length / 144) in `<s>.targetcoverage.cnn`. chrX/chrY are never
-masked. `dropout_qc` lists the masked probes. `dropout_mask=false` segments the unmasked `.cnr`: the validated final configuration without the mask (arm A0),
-not v2.0.x (v2.1.0 keeps edge correction, `--diploid-parx-genome` and the other changes).
+A probe dropout is 1–2 adjacent probes with almost no reads among normal neighbours. Probe dropouts inflate the CBS
+noise estimate and hide focal events on the same chromosome (e.g. the common inherited ETV6 deletion, gnomAD-SV
+DEL_chr12_9b8e999a, impairs chr12 calling). To correct this, probe dropouts are masked before being passed to
+`segment`. During masking, an **autosomal** probe is assigned a weight of 0 in the segmentation input when all of the
+following criteria hold: `.cnr` log2 < −3; it is in a run of ≤ 2 adjacent probes with log2 < −3 (longer runs are
+callable deletions and are kept); fewer than 10 raw read-equivalents (depth × length / 144) in
+`<s>.targetcoverage.cnn`. chrX/chrY are never masked. `dropout_qc` lists the masked probes. `dropout_mask=false`
+segments the unmasked `.cnr`: the validated final configuration without the mask (arm A0), not v2.0.x (v2.1.0 keeps
+edge correction, `--diploid-parx-genome` and the other changes).
 
 ### Copy-number calls
 
-`call` uses CNVkit's log2 ratio thresholds (`fc65941` defaults: amplification ≥ 0.7, gain ≥ 0.2, loss < −0.25,
-deletion < −1.1). No purity or ploidy correction: CNVkit stays an independent depth-based caller, and PURPLE is the
-source of absolute copy number, hom/het and LOH in the side-by-side review (DI-4121).
+`call` uses CNVkit's log2 ratio thresholds to classify copy-number events (`fc65941` defaults: amplification ≥ 0.7,
+gain ≥ 0.2, loss < −0.25, deletion < −1.1). No purity or ploidy correction is applied: CNVkit stays an independent
+depth-based caller, and within the Atlas workflow PURPLE is the source of absolute copy number, hom/het and LOH in
+the side-by-side review (DI-4121).
 
 ## What are the inputs?
 
@@ -106,9 +118,9 @@ source of absolute copy number, hom/het and LOH in the side-by-side review (DI-4
 | `scatter_png` | `<s>.scatter.png`: genome-wide scatter, y = ±3 (optional: plot failures are not fatal) |
 | `diagram_pdf` | `<s>.diagram.pdf`: chromosome ideogram with gene labels (optional) |
 
-**`sex_mismatch`** is 1 when the declared sex (override, else LIMS) disagrees with chrY presence in the raw
-coverage: review the sample (possible sample swap, or a sex-chromosome variant). `NA` when the LIMS letter is not M/F
-and there is no override.
+Within `<s>.sex_qc.tsv`, **`sex_mismatch`** is 1 when the declared sex (override, else LIMS) disagrees with chrY
+presence in the raw coverage: review the sample (possible sample swap, or a sex-chromosome variant). `NA` when the LIMS
+letter is not M/F and there is no override.
 
 ## How to run this app from the command line?
 
@@ -122,7 +134,7 @@ dx run eggd_cgp-cnvkit-batch \
   --destination "project-xxxx:/cnvkit/" -y
 ```
 
-`dropout_mask` and `drop_low_coverage` default to `true`, the validated setting. All samples can run in parallel.
+All samples can run in parallel (one job per sample).
 
 ## Dependencies
 
@@ -137,8 +149,8 @@ dx run eggd_cgp-cnvkit-batch \
   | `cnvkit_parfix.py` | `genemetrics_parfix.py` @ `f933f7a` |
   | `cnvkit_sex_qc.py` | `sex_check.py` @ `31a62fc` |
 
-- `resources/usr/local/lib/cgp_cnvkit_batch/pipeline.sh`: the analysis; `src/code.sh` only stages inputs and uploads
-  outputs.
+- `resources/usr/local/lib/cgp_cnvkit_batch/pipeline.sh`: the analysis.
+- `src/code.sh`: stages inputs and uploads outputs.
 
 ## Known limitations
 
@@ -173,5 +185,3 @@ tests/harness/run_local.py --data nonumi --start-from bam --samples 25328S0023  
 | L2 pipeline | The exact CNVkit command lines for every input scenario, under PATH stubs for `dx` and `docker` |
 | L3 equivalence | The ports reproduce the validation byte for byte on all 226 sequencings, UMI-consensus and non-UMI |
 | L4 harness | The real image + `pipeline.sh` reproduce the four validation baselines on 16 sequencings |
-
-Plans: `PLAN_v2.1.0.md` (what) and `PLAN_v2.1.0_build.md` (how; baselines and test layers in §0b and §3).

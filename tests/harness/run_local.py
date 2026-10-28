@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""L4 local harness (PLAN_v2.1.0_build.md Phase 5): the app's pipeline.sh with the real cgp-cnvkit:1.0.0 image,
+"""L4 local harness: the app's pipeline.sh with the real cgp-cnvkit:1.0.0 image,
 on the local test sequencings, compared byte for byte with the validation baselines.
 
 Each sequencing runs in its own directory with its validated PoN (leave-out for PoN members, shared otherwise) and
 --diploid-parx-genome grch38, the Atlas setting, and starts from the validated coverage (or from the BAM).
 
-Baselines (§0b): mask on -> U-M / N-M; mask off -> U-A0 (umi/final) / N-A0. U-M genemetrics.tsv is from before the
+Baselines: mask on -> U-M / N-M; mask off -> U-A0 (umi/final) / N-A0. U-M genemetrics.tsv is from before the
 PAR post-step, so for UMI with the mask on the app's genemetrics.noparfix.tsv is compared with it, and the post-step
 genemetrics.tsv with U-M (not treated as male) or U-A0 (treated male, nothing masked); a treated male with a masked
 probe has no UMI post-step baseline (reported as n/a; the non-UMI N-M covers that path).

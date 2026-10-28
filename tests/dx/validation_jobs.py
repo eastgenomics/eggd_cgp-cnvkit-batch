@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""L5/L6 on DNAnexus (PLAN_v2.1.0_build.md Phase 7): build the applet, run the T matrix and the E3 equivalence test
+"""L5/L6 on DNAnexus: build the applet, run the T matrix and the E3 equivalence test
 (226 sequencings from the non-UMI BAMs, dropout mask on, validated non-UMI PoNs), and check the outputs against the
 baselines with the same checks as the local harness.
 

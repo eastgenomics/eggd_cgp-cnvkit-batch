@@ -18,8 +18,11 @@ def run_mask(tmp_path, bin_list, depth=0.0, script=SCRIPT, tag="new"):
     cnr = write_table(tmp_path / "s.cnr", CNR_HEADER, cnr_rows(bin_list))
     cnn = write_table(tmp_path / "s.targetcoverage.cnn", CNN_HEADER, cnn_rows(bin_list, depth))
     out, qc = tmp_path / f"{tag}.seg_input.cnr", tmp_path / f"{tag}.dropout_qc.tsv"
-    proc = subprocess.run([sys.executable, str(script), "mask", "M", str(cnr), str(cnn), "spec", "-",
-                           str(out), str(qc)], capture_output=True, text=True)
+    if script == SCRIPT:
+        args = ["mask", str(cnr), str(cnn), str(out), str(qc)]
+    else:  # the pinned reference retains the validation CLI
+        args = ["mask", "M", str(cnr), str(cnn), "spec", "-", str(out), str(qc)]
+    proc = subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr
     return cnr, out, qc, proc.stdout
 
@@ -98,7 +101,7 @@ def test_bin_absent_from_coverage_counts_as_zero_reads(tmp_path):
     cnr = write_table(tmp_path / "s.cnr", CNR_HEADER, cnr_rows(b))
     cnn = write_table(tmp_path / "s.cnn", CNN_HEADER, cnn_rows([b[0], b[2]], 500.0))   # deep bin missing
     out, qc = tmp_path / "o.cnr", tmp_path / "q.tsv"
-    subprocess.run([sys.executable, str(SCRIPT), "mask", "M", str(cnr), str(cnn), "s", "-", str(out), str(qc)],
+    subprocess.run([sys.executable, str(SCRIPT), "mask", str(cnr), str(cnn), str(out), str(qc)],
                    check=True, capture_output=True)
     assert masked(out) == [1]
     assert qc_rows(qc)[0][6] == "0.0"
@@ -149,9 +152,9 @@ def test_qc_header_subcommand_matches_mask_output(tmp_path):
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 @pytest.mark.parametrize("argv, message", [
-    (["mask", "L5", "a", "b", "s", "-", "o", "q"], "only arm M"),
-    (["mask", "MB", "a", "b", "s", "-", "o", "q"], "only arm M"),
-    (["mask", "M", "a", "b", "s", "blacklist.tsv", "o", "q"], "no blacklist"),
+    (["mask", "M", "a", "b", "s", "-", "o", "q"], "Usage"),  # old validation CLI
+    (["mask", "a", "b", "o"], "Usage"),  # missing QC file
+    (["mask", "a", "b", "o", "q", "extra"], "Usage"),
     (["blacklist", "out.tsv", "map.tsv", "a.cnr"], "Usage"),
     ([], "Usage"),
 ])

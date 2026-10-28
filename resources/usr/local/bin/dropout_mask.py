@@ -4,7 +4,7 @@
 Source: the `mask` function and constants of `analysis/pon_comparison/scripts/deadprobe_mask.py` at commit ddad79b
 of cnv-backbone-purple-atlas (project-JF3p1f04Yggp0vf3PYjy7Q0F:file-JFGy8Vj4Yggp4Zj50GVVzF2Q, md5
 382acdecb5be92d6074f8957362bdfd9), arm M only. The `blacklist` mode and the L5 / L3 / MB arms are removed. The
-positional CLI and the output bytes are unchanged, so the command is the one validated.
+masking rule and output bytes are unchanged; the CLI accepts only the inputs used by arm M.
 Evaluation: Confluence DV 4850548748 "CNVkit evaluation for Atlas — probe dropouts and the dropout mask" (UMI-consensus
 T3 and non-UMI T5); DI-4139 comment 72496 (non-UMI: rule and constants unchanged).
 
@@ -18,9 +18,8 @@ chrX and chrY are never masked. CNVkit `segment` drops weight-0 bins before CBS,
 --drop-low-coverage, so only the segmentation input changes.
 
 Usage
-  dropout_mask.py mask M <in.cnr> <raw.targetcoverage.cnn> <specimen> - <out.cnr> <qc.tsv>
-      writes the masked copy of the .cnr and the QC table of masked bins (header only when none). <specimen> is
-      not used by arm M (kept for CLI compatibility); the blacklist argument must be '-'.
+  dropout_mask.py mask <in.cnr> <raw.targetcoverage.cnn> <out.cnr> <qc.tsv>
+      writes the masked copy of the .cnr and the QC table of masked bins (header only when none).
   dropout_mask.py qc-header <qc.tsv>
       writes the header-only QC table (the app's output when the mask is switched off).
 """
@@ -35,12 +34,8 @@ def rows_of(path):
     return lines[0], [l.split('\t') for l in lines[1:]]
 
 
-def mask(arm, cnr, cnn, spec, bl, out, qc):
+def mask(cnr, cnn, out, qc):
     """Arm M of deadprobe_mask.mask (ddad79b); returns the number of masked bins."""
-    if arm != 'M':
-        raise ValueError(f'only arm M is supported, not {arm!r}')
-    if bl != '-':
-        raise ValueError(f"arm M takes no blacklist: expected '-', got {bl!r}")
     hdr, rows = rows_of(cnr); h = hdr.split('\t'); li, wi = h.index('log2'), h.index('weight')
     _, raw = rows_of(cnn)
     rawd = {(r[0], r[1], r[2]): float(r[4]) * (int(r[2]) - int(r[1])) / READ_LEN for r in raw}
@@ -70,7 +65,7 @@ def mask(arm, cnr, cnn, spec, bl, out, qc):
         f.write(QC_HEADER)
         for i in sorted(hit):
             r = rows[i]
-            f.write(f'{arm}\t{r[0]}\t{r[1]}\t{r[2]}\t{r[3]}\t{l2[i]:g}\t{rawd.get(tuple(r[:3]), 0.0):.1f}\t{why[i]}\n')
+            f.write(f'M\t{r[0]}\t{r[1]}\t{r[2]}\t{r[3]}\t{l2[i]:g}\t{rawd.get(tuple(r[:3]), 0.0):.1f}\t{why[i]}\n')
     return len(hit)
 
 
@@ -80,9 +75,9 @@ def qc_header(qc):
 
 
 def main(argv):
-    if len(argv) == 9 and argv[1] == 'mask':
+    if len(argv) == 6 and argv[1] == 'mask':
         try:
-            n = mask(*argv[2:9])
+            n = mask(*argv[2:6])
         except ValueError as e:
             sys.exit(f'dropout_mask.py: {e}')
         print(f'[dropout] masked probes: {n}')

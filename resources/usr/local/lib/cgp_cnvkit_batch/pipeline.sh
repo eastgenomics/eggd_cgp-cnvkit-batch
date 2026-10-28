@@ -48,7 +48,7 @@ run_pipeline() {
             echo "[parx] WARNING: diploid_parx_genome is empty: chrX PAR1/PAR2 are treated as X-specific, so"
             echo "[parx] WARNING: CNVkit's sex inference calls every sample female. Atlas requires grch38." ;;
         *)
-            echo "ERROR: diploid_parx_genome '${DIPLOID_PARX_GENOME}' is not supported (grch38, or empty)"
+            echo "ERROR: diploid_parx_genome '${DIPLOID_PARX_GENOME}' is not supported (grch38, or empty)" >&2
             return 1 ;;
     esac
 
@@ -81,7 +81,7 @@ run_pipeline() {
     # ── Coverage (amplicon mode — panel BED directly, no autobin) ─────────────
     if [ "${START_FROM:-bam}" = "coverage" ]; then
         if [ ! -s "${s}.targetcoverage.cnn" ]; then
-            echo "ERROR: START_FROM=coverage but ${s}.targetcoverage.cnn is missing"
+            echo "ERROR: START_FROM=coverage but ${s}.targetcoverage.cnn is missing" >&2
             return 1
         fi
         echo "[coverage] START_FROM=coverage: using the existing ${s}.targetcoverage.cnn"
@@ -111,7 +111,7 @@ run_pipeline() {
     # copy of the .cnr that only segment reads; every other step reads the unmasked <s>.cnr.
     local seg_in="${s}.cnr"
     if [ "${DROPOUT_MASK:-true}" = "true" ]; then
-        dropout_mask.py mask M "${s}.cnr" "${s}.targetcoverage.cnn" "${s}" - \
+        dropout_mask.py mask "${s}.cnr" "${s}.targetcoverage.cnn" \
             "${s}.seg_input.cnr" "${s}.dropout_qc.tsv" > /dev/null
         seg_in="${s}.seg_input.cnr"
         DROPOUT_PROBES=$(( $(wc -l < "${s}.dropout_qc.tsv") - 1 ))

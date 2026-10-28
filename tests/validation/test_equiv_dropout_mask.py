@@ -35,7 +35,7 @@ def test_dropout_mask_equivalence(tmp_path, ported, reference, dataset):
             mismatches.append(f"{run}/{s}: M .cnr differs from A0 .cnr")
         out_p, qc_p = tmp_path / "port.cnr", tmp_path / "port.qc.tsv"
         out_r, qc_r = tmp_path / "ref.cnr", tmp_path / "ref.qc.tsv"
-        n = ported.mask("M", str(cnr), str(cnn), s, "-", str(out_p), str(qc_p))
+        n = ported.mask(str(cnr), str(cnn), str(out_p), str(qc_p))
         reference.mask("M", str(cnr), str(cnn), s, "-", str(out_r), str(qc_r))
         if out_p.read_bytes() != out_r.read_bytes():
             mismatches.append(f"{run}/{s}: masked .cnr differs from the reference")
