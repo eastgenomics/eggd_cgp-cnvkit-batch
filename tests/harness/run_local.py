@@ -15,15 +15,19 @@ Usage
                [--jobs N] [--label NAME]
   --start-from bam downloads the non-UMI BAM/BAI and the bins BED (cached under tests/.data/harness/inputs/).
 Writes tests/.data/harness/<label>/<run>/<sample>/ and <label>/report.tsv; exit 1 on any FAIL.
+After unconfirmed timeout cleanup, inspect the named container and process before removing the sample's
+.cleanup-unconfirmed marker to allow reuse of its work directory.
 """
 import argparse
 import concurrent.futures as cf
 import csv
 import os
 import shutil
+import signal
 import subprocess
 import sys
 import threading
+import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
@@ -37,6 +41,8 @@ SAMPLES = REPO / "tests" / "harness" / "local_samples.tsv"
 IMAGE = "cgp-cnvkit:1.0.0"
 BED = "project-Fkb6Gkj433GVVvj73J7x8KbV:file-JBxvjg8433GxJf9Xypj5qyXf"   # atlas_cnvkit_bins_for_cgp_hg38_v1.1.bed
 PIPELINE_TIMEOUT = 2 * 3600   # seconds per sequencing; a hung container is reported as a FAIL (exit 124)
+BED_TIMEOUT = 300              # seconds for the shared BED download
+CLEANUP_TIMEOUT = 30           # seconds per process/container cleanup step
 _BED_LOCK = threading.Lock()
 QC_HEADER = "arm\tchromosome\tstart\tend\tgene\tlog2\traw_reads\treason\n"
 SEX_FIELDS_UMI = ["lims_sex", "raw_Y_logratio", "chrY_present", "chrY_sex", "raw_X_logratio", "raw_cnvkit_sex",
@@ -60,13 +66,31 @@ def treated_male_log(data, mask):
             for r in read_tsv(DATA / data / "parfix_log.tsv") if r["arm"] == arm and "/d00/" in r["rundir"]}
 
 
+def fetch_bed():
+    """Download the shared BED once; publish only a complete transfer."""
+    bed = HARNESS / "inputs" / "panel.bed"
+    bed.parent.mkdir(parents=True, exist_ok=True)
+    with _BED_LOCK:
+        if not bed.exists():
+            part = bed.with_name(f"{bed.name}.{uuid.uuid4().hex}.part")
+            try:
+                subprocess.run(["dx", "download", "-f", BED, "-o", str(part)], check=True, timeout=BED_TIMEOUT)
+                os.replace(part, bed)
+            finally:
+                try:
+                    part.unlink(missing_ok=True)
+                except OSError as e:
+                    print(f"WARNING: could not remove partial download {part}: {e}", file=sys.stderr)
+    return bed
+
+
 def fetch_bam_inputs(run, s):
-    """Non-UMI BAM + BAI (the eggd_chr_prefix output the coverage app used) and the bins BED, cached."""
+    """Non-UMI BAM + BAI (the eggd_chr_prefix output the coverage app used), cached."""
     inv = {(r["run"], r["sample_id"]): r for r in read_tsv(DATA / "manifest" / "nonumi_inventory.tsv")}
     bam_ref = inv[(run, s)]["new_bam"]
     d = HARNESS / "inputs" / run / s
     d.mkdir(parents=True, exist_ok=True)
-    bam, bai, bed = d / "tumour.bam", d / "tumour.bam.bai", HARNESS / "inputs" / "panel.bed"
+    bam, bai = d / "tumour.bam", d / "tumour.bam.bai"
     project = bam_ref.split(":")[0]
     if not bam.exists():
         subprocess.run(["dx", "download", "-f", bam_ref, "-o", f"{bam}.part"], check=True)
@@ -79,16 +103,33 @@ def fetch_bam_inputs(run, s):
         if len(found) != 1:
             raise RuntimeError(f"{s}: expected one {name}.bai, found {found}")
         subprocess.run(["dx", "download", "-f", found[0], "-o", str(bai)], check=True)
-    with _BED_LOCK:   # shared by all workers: download once, publish the complete file atomically
-        if not bed.exists():
-            subprocess.run(["dx", "download", "-f", BED, "-o", f"{bed}.part"], check=True)
-            os.replace(f"{bed}.part", bed)
-    return bam, bai, bed
+    return bam, bai
+
+
+def stop_container(name, log):
+    """Boundedly remove only this run's container; report unconfirmed cleanup."""
+    try:
+        result = subprocess.run(["docker", "rm", "--force", name], capture_output=True, text=True,
+                                timeout=CLEANUP_TIMEOUT)
+    except (subprocess.SubprocessError, OSError) as e:
+        log.write(f"Container cleanup not confirmed for {name}: {e}\n")
+        return False
+    if result.returncode:
+        log.write(f"Container cleanup not confirmed for {name}: {result.stderr.strip()}\n")
+        return False
+    log.write(f"Removed timed-out container {name}\n")
+    return True
 
 
 def run_sample(row, a, out):
     run, s = row["run"], row["sample"]
     wd = out / run / s
+    marker = wd / ".cleanup-unconfirmed"
+    if marker.exists():
+        with open(wd / "pipeline.log", "a") as log:
+            log.write(f"Refusing to reuse this directory: inspect {marker.read_text().strip()}, "
+                      f"then remove {marker}\n")
+        return 1
     if wd.exists():
         shutil.rmtree(wd)
     wd.mkdir(parents=True)
@@ -96,27 +137,47 @@ def run_sample(row, a, out):
     if a.start_from == "coverage":
         shutil.copyfile(DATA / a.data / "cnn" / run / f"{s}.targetcoverage.cnn", wd / f"{s}.targetcoverage.cnn")
     else:
-        bam, bai, bed = fetch_bam_inputs(run, s)
+        bam, bai = fetch_bam_inputs(run, s)
         os.symlink(bam, wd / "tumour.bam")
         os.symlink(bai, wd / "tumour.bam.bai")
-        shutil.copyfile(bed, wd / "panel.bed")
-    env = {**os.environ, "PATH": f"{BIN}:{os.environ['PATH']}",
+        shutil.copyfile(a.bed, wd / "panel.bed")
+    container = f"cnvkit-harness-{uuid.uuid4().hex}"
+    env = {**os.environ, "PATH": f"{BIN}:{os.environ['PATH']}", "HARNESS_CONTAINER_NAME": container,
            "SAMPLE_ID": s, "BAM_NAME": f"{s}.bam", "START_FROM": a.start_from, "NPROC": str(a.nproc),
            "DIPLOID_PARX_GENOME": "grch38", "SEX_OVERRIDE": "", "DROP_LOW_COVERAGE": "true",
            "DROPOUT_MASK": "true" if a.mask else "false"}
     # BAM inputs are symlinks outside the work directory: mount their directory at the same path
     extra = f'-v "{HARNESS / "inputs"}:{HARNESS / "inputs"}:ro"' if a.start_from == "bam" else ""
     script = (f'set -eo pipefail; source "{LIB}"; '
-              f'run_cnvkit() {{ docker run --rm -u {os.getuid()}:{os.getgid()} -e HOME=/tmp -e MPLCONFIGDIR=/tmp '
+              f'run_cnvkit() {{ docker run --rm --name "$HARNESS_CONTAINER_NAME" -u {os.getuid()}:{os.getgid()} '
+              f'-e HOME=/tmp -e MPLCONFIGDIR=/tmp '
               f'{extra} -v "$(pwd)":/work -w /work {IMAGE} cnvkit.py "$@"; }}; run_pipeline')
     with open(wd / "pipeline.log", "w") as log:
+        log.write(f"[harness] container: {container}\n")
+        log.flush()
+        proc = subprocess.Popen(["bash", "-c", script], cwd=wd, env=env, stdout=log, stderr=subprocess.STDOUT,
+                                start_new_session=True)
         try:
-            proc = subprocess.run(["bash", "-c", script], cwd=wd, env=env, stdout=log, stderr=subprocess.STDOUT,
-                                  timeout=PIPELINE_TIMEOUT)
+            return proc.wait(timeout=PIPELINE_TIMEOUT)
         except subprocess.TimeoutExpired:
-            log.write(f"\nTIMEOUT after {PIPELINE_TIMEOUT} s\n")
+            log.write(f"\nTIMEOUT after {PIPELINE_TIMEOUT} s; process group {proc.pid}\n")
+            group_stopped = True
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError as e:
+                group_stopped = False
+                log.write(f"Process-group cleanup not confirmed: {e}\n")
+            try:
+                proc.wait(timeout=CLEANUP_TIMEOUT)
+            except (subprocess.SubprocessError, OSError) as e:
+                group_stopped = False
+                log.write(f"Process-group cleanup not confirmed: waiting for the shell: {e}\n")
+            removed = stop_container(container, log)
+            if not group_stopped or not removed:
+                marker.write_text(container + "\n")
             return 124
-    return proc.returncode
 
 
 def same(a, b):
@@ -206,11 +267,26 @@ def main(argv=None):
     out.mkdir(parents=True, exist_ok=True)
     male_log = treated_male_log(a.data, a.mask)
     print(f"{label}: {len(rows)} sequencings, {a.jobs} in parallel -> {out}", flush=True)
-    with cf.ThreadPoolExecutor(a.jobs) as ex:
-        rcs = dict(zip([(r["run"], r["sample"]) for r in rows], ex.map(lambda r: run_sample(r, a, out), rows)))
+    bed_error = None
+    if a.start_from == "bam":
+        try:
+            a.bed = fetch_bed()
+        except (subprocess.SubprocessError, OSError) as e:
+            bed_error = e
     results = []
-    for r in rows:
-        results += check_sample(r, a, out, rcs[(r["run"], r["sample"])], male_log)
+    if bed_error is not None:
+        # Do not touch any sample workdir: it may contain evidence of unconfirmed container cleanup.
+        for r in rows:
+            marker = out / r["run"] / r["sample"] / ".cleanup-unconfirmed"
+            detail = f"shared BED download failed: {bed_error}"
+            if marker.exists():
+                detail += f"; cleanup unconfirmed; see {marker}"
+            results.append((r["sample"], "pipeline", "FAIL", detail))
+    else:
+        with cf.ThreadPoolExecutor(a.jobs) as ex:
+            rcs = dict(zip([(r["run"], r["sample"]) for r in rows], ex.map(lambda r: run_sample(r, a, out), rows)))
+        for r in rows:
+            results += check_sample(r, a, out, rcs[(r["run"], r["sample"])], male_log)
     with open(out / "report.tsv", "w") as fh:
         fh.write("sample\tcheck\tresult\tdetail\n")
         for x in results:

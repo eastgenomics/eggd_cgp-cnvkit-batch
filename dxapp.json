@@ -59,7 +59,7 @@
       "choices": [
         "grch38"
       ],
-      "help": "Passed as --diploid-parx-genome to cnvkit.py fix, segment, call, genemetrics and diagram (and to the sex checks), so chrX PAR1/PAR2 are treated as diploid in both sexes. Must be grch38 for Atlas CGP and must match the PoN build. If empty, the flag is omitted and a warning is logged: CNVkit then infers every sample as female."
+      "help": "Passed as --diploid-parx-genome to cnvkit.py fix, segment, call, genemetrics and diagram (and to the sex checks), so chrX PAR1/PAR2 are treated as diploid in both sexes. Must be grch38 for Atlas CGP and must match the PoN build. If empty, the flag is omitted, the PAR post-step does not run, and a warning is logged: raw-coverage sex QC can call male samples female."
     },
     {
       "name": "purity",

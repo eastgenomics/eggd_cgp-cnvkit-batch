@@ -50,8 +50,9 @@ The applied sex is passed as `-x` to `call`, `genemetrics` and `diagram`. Preced
 1. `sex_override`: `male`, `female`, `M` or `F` (case-insensitive). Any other value fails the job before analysis.
 2. The LIMS letter: field 5 of the `-`-split `sample_id` (e.g. `140609591-25328S0023-26CGPV2-8475-M-96770770` → `M`),
    or of the BAM file name when `sample_id` has fewer than 5 fields. `M` → `-x male`, `F` → `-x female`.
-3. Otherwise, including a LIMS letter of `U`, no `-x`: CNVkit infers the sex from chrX
-   (`applied_sex = cnvkit_inferred(...)`).
+3. Otherwise, including a LIMS letter of `U`, no `-x` is supplied: CNVkit infers sex from chrX
+   (`applied_sex = cnvkit_inferred(...)`). For Atlas, use `diploid_parx_genome=grch38`; if it is empty, the
+   raw-coverage sex QC can call male samples female. An explicit override or M/F LIMS letter still takes precedence.
 
 `sample_sex` (wired from PURPLE's inferred sex in the current workflow) is ignored, with a warning.
 
@@ -95,7 +96,7 @@ the side-by-side review (DI-4121).
 | `sample_id` | string | ✅ | Output file stem; field 5 is the LIMS sex letter |
 | `cn_reference` | file | ✅ | PoN reference (`.cnn`) built with the same BED |
 | `baits` | file | ✅ | Panel BED (bins BED v1.1 for Atlas), identical to the PoN build |
-| `diploid_parx_genome` | string | ➖ | `grch38` (**required for Atlas**) or empty. Empty: no `--diploid-parx-genome`, no PAR post-step, and a warning (every sample is then inferred female) |
+| `diploid_parx_genome` | string | ➖ | `grch38` (**required for Atlas**) or empty. Empty: no `--diploid-parx-genome`, no PAR post-step, and a warning (raw-coverage sex QC can call male samples female) |
 | `sex_override` | string | ➖ | `male` / `female` / `M` / `F`; wins over the LIMS letter. Leave empty in routine use |
 | `drop_low_coverage` | boolean | ➖ | `--drop-low-coverage` on `segment` (default `true`) |
 | `dropout_mask` | boolean | ➖ | Mask isolated probe dropouts before segmentation (default `true`) |

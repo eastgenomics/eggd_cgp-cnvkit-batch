@@ -406,6 +406,8 @@ def test_parx_empty_warns_and_omits_the_flag(tmp_path):
     assert run.returncode == 0, run.stderr
     assert not any("--diploid-parx-genome" in c for c in run.cnvkit)
     assert PARX_WARNING in run.stdout
+    assert "raw-coverage sex QC can call male samples female" in run.stdout
+    assert "inference calls every sample female" not in run.stdout
 
 
 def test_parx_rejects_other_values(tmp_path):

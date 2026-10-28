@@ -46,7 +46,7 @@ run_pipeline() {
             echo "[parx] --diploid-parx-genome grch38 on fix, segment, call, genemetrics and diagram" ;;
         "")
             echo "[parx] WARNING: diploid_parx_genome is empty: chrX PAR1/PAR2 are treated as X-specific, so"
-            echo "[parx] WARNING: CNVkit's sex inference calls every sample female. Atlas requires grch38." ;;
+            echo "[parx] WARNING: raw-coverage sex QC can call male samples female. Atlas requires grch38." ;;
         *)
             echo "ERROR: diploid_parx_genome '${DIPLOID_PARX_GENOME}' is not supported (grch38, or empty)" >&2
             return 1 ;;

@@ -7,12 +7,13 @@ applied_sex / applied_source, which follow the app's resolution (D8); sex_mismat
 """
 import argparse
 import csv
+import shlex
 import subprocess
 
 import pytest
 
 from test_equiv_parfix import docker_available, in_image
-from vdata import BIN, DATA, REFERENCE, load_module, require, sequencings
+from vdata import BIN, DATA, REFERENCE, REPO, load_module, require, sequencings
 
 pytestmark = [pytest.mark.validation, pytest.mark.docker]
 
@@ -36,6 +37,26 @@ def one_row_table(path, sample_file, r):
     path.write_text("sample\tsex\tX_logratio\tY_logratio\n"
                     f"{sample_file}\t{r['sex']}\t{r['X_logratio']}\t{r['Y_logratio']}\n")
     return path
+
+
+@pytest.mark.skipif(not docker_available(), reason="docker or cgp-cnvkit:1.0.0 not available")
+def test_no_parx_raw_and_cnr_inference_are_distinct(tmp_path):
+    # A no-PARX fix run on a LIMS-M sample: the raw-coverage and .cnr sex calls are not interchangeable.
+    rows = read_tsv(REPO / "tests" / "harness" / "local_samples.tsv")
+    row = next(r for r in rows if "25328S0023" in r["sample"])
+    cnn = require(DATA / "nonumi" / "cnn" / row["run"] / f"{row['sample']}.targetcoverage.cnn")
+    pon = require(DATA / "nonumi" / "pons" / f"{row['cn_reference']}.cnn")
+    empty = tmp_path / "empty.cnn"
+    empty.write_text("chromosome\tstart\tend\tgene\tlog2\tdepth\tweight\n")
+    cnr, raw_sex, cnr_sex = (tmp_path / name for name in ("no-parx.cnr", "raw-sex.tsv", "cnr-sex.tsv"))
+    q = shlex.quote
+    in_image(tmp_path, f"""set -e
+        cnvkit.py fix {q(str(cnn))} {q(str(empty))} {q(str(pon))} -o {q(str(cnr))}
+        cnvkit.py sex {q(str(cnn))} -o {q(str(raw_sex))}
+        cnvkit.py sex {q(str(cnr))} -o {q(str(cnr_sex))}
+    """)
+    assert read_tsv(raw_sex)[0]["sex"] == "Female"
+    assert read_tsv(cnr_sex)[0]["sex"] == "Male"
 
 
 @pytest.mark.skipif(not docker_available(), reason="docker or cgp-cnvkit:1.0.0 not available")
