@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""Test stub for `dx-jobutil-add-output NAME VALUE --class=CLASS`: records the job output."""
+import json
+import os
+import sys
+
+args = sys.argv[1:]
+cls = next((a.split("=", 1)[1] for a in args if a.startswith("--class=")), None)
+pos = [a for a in args if not a.startswith("--")]
+with open(os.path.join(os.environ["STUB_LOG"], "outputs.jsonl"), "a") as fh:
+    fh.write(json.dumps({"name": pos[0], "value": pos[1], "class": cls}) + "\n")

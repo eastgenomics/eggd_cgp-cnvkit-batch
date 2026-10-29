@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+"""Test stub for `docker load` and `docker run ... IMAGE cnvkit.py <subcommand> ...`.
+
+Each `docker run` is logged to $STUB_LOG/docker.jsonl as {"options": [...], "image": ..., "cmd": [...]}.
+CNVkit subcommands write a small placeholder output at their -o/--output path, inside the host directory
+mounted at the container working directory, so the app's later steps find their inputs.
+
+Environment:
+  STUB_LOG   directory for the call log
+  STUB_FAIL  comma-separated CNVkit subcommands that exit 1 (failure injection)
+  STUB_RAW_SEX, STUB_RAW_Y   `cnvkit.py sex` on a .targetcoverage.cnn: sex call and Y log-ratio (Male, -1.13)
+  STUB_CNR_SEX               `cnvkit.py sex` on a .cnr: sex call (Male)
+  STUB_OUTPUT_<SUBCOMMAND>   a file copied as that subcommand's output instead of the placeholder
+  STUB_OUTPUT_<SUBCOMMAND>_<DIR>  the same, only when run in the mounted directory named <dir> (e.g. PARFIX)
+"""
+import shutil
+import json
+import os
+import sys
+
+VALUE_OPTS = {"-v", "--volume", "-w", "--workdir", "-e", "--env", "-u", "--user",
+              "--entrypoint", "--tmpfs", "--network", "--name", "--cpus", "-m", "--memory"}
+
+# placeholder content per subcommand: (header, data rows)
+OUTPUT = {
+    "coverage": ("chromosome\tstart\tend\tgene\tdepth\tlog2", ["chr1\t100\t200\tGENE1\t500.0\t9.0"]),
+    "fix": ("chromosome\tstart\tend\tgene\tdepth\tlog2\tweight", ["chr1\t100\t200\tGENE1\t500.0\t0.0\t1.0"]),
+    "segment": ("chromosome\tstart\tend\tgene\tlog2\tdepth\tprobes\tweight",
+                ["chr1\t100\t200\tGENE1\t0.0\t500.0\t1\t1.0", "chr2\t100\t200\tGENE2\t0.5\t500.0\t1\t1.0"]),
+    "call": ("chromosome\tstart\tend\tgene\tlog2\tcn\tdepth\tprobes\tweight",
+             ["chr1\t100\t200\tGENE1\t0.0\t2\t500.0\t1\t1.0", "chr2\t100\t200\tGENE2\t0.5\t3\t500.0\t1\t1.0"]),
+    "genemetrics": ("gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tcn\tprobes",
+                    ["GENE2\tchr2\t100\t200\t0.5\t500.0\t1.0\t3\t3"]),
+    "sex": ("sample\tsex\tX_logratio\tY_logratio", []),
+    "scatter": ("PNG placeholder", []),
+    "diagram": ("PDF placeholder", []),
+}
+
+args = sys.argv[1:]
+log_dir = os.environ["STUB_LOG"]
+
+if args[:1] == ["load"]:
+    sys.stdin.buffer.read()
+    print("Loaded image: stub")
+    sys.exit(0)
+if args[:1] != ["run"]:
+    sys.exit(f"docker stub: unsupported command {args!r}")
+
+opts, i = [], 1
+while i < len(args) and args[i].startswith("-"):
+    opts.append(args[i])
+    if args[i] in VALUE_OPTS:
+        opts.append(args[i + 1])
+        i += 1
+    i += 1
+image, cmd = args[i], args[i + 1:]
+with open(os.path.join(log_dir, "docker.jsonl"), "a") as fh:
+    fh.write(json.dumps({"options": opts, "image": image, "cmd": cmd}) + "\n")
+
+# map the container working directory back to the host
+mounts = dict(o.split(":", 1)[::-1] for o, prev in zip(opts[1:], opts) if prev in ("-v", "--volume"))
+cwd = None
+if "-w" in opts:
+    cwd = opts[opts.index("-w") + 1]
+host = mounts.get(cwd, os.getcwd()) if cwd else os.getcwd()
+
+if cmd[:1] != ["cnvkit.py"]:
+    sys.exit(0)
+sub = cmd[1] if len(cmd) > 1 else ""
+if sub == "version":
+    print("0.9.13")
+    sys.exit(0)
+if sub in os.environ.get("STUB_FAIL", "").split(","):
+    print(f"stub failure injected for cnvkit.py {sub}", file=sys.stderr)
+    sys.exit(1)
+out = None
+for flag in ("-o", "--output"):
+    if flag in cmd:
+        out = cmd[cmd.index(flag) + 1]
+override = (os.environ.get(f"STUB_OUTPUT_{sub.upper()}_{os.path.basename(host).upper()}")
+            or os.environ.get(f"STUB_OUTPUT_{sub.upper()}"))
+if out and override:
+    shutil.copyfile(override, os.path.join(host, out))
+elif sub == "sex" and out:
+    sample = cmd[2]
+    if sample.endswith(".cnr"):
+        row = f"{sample}\t{os.environ.get('STUB_CNR_SEX', 'Male')}\t-0.945\tnan"
+    else:
+        row = f"{sample}\t{os.environ.get('STUB_RAW_SEX', 'Male')}\t-0.971\t{os.environ.get('STUB_RAW_Y', '-1.13')}"
+    with open(os.path.join(host, out), "w") as fh:
+        fh.write(OUTPUT["sex"][0] + "\n" + row + "\n")
+elif out:
+    header, rows = OUTPUT.get(sub, ("placeholder", []))
+    with open(os.path.join(host, out), "w") as fh:
+        fh.write("\n".join([header] + rows) + "\n")

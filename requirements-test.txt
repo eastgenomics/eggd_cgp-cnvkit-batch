@@ -1,0 +1,3 @@
+# Test dependencies only: the app's bundled scripts are standard-library Python.
+# python3 -m venv .venv && uv pip install --python .venv/bin/python -r requirements-test.txt
+pytest==8.4.2

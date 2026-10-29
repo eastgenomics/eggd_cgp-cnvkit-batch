@@ -1,11 +1,11 @@
 {
   "name": "eggd_cgp-cnvkit-batch",
   "title": "eggd_cgp-cnvkit-batch",
-  "summary": "Per-sample CNVkit analysis: coverage, PoN normalisation, CBS segmentation, integer CN calling, scatter plot and gene metrics for one tumour-only CGP panel sample.",
+  "summary": "Per-sample CNVkit analysis for one tumour-only CGP panel sample (validated Atlas configuration): coverage, PoN normalisation, dropout mask, CBS segmentation, copy-number calls, gene metrics with the PAR post-step, sex QC and plots.",
   "dxapi": "1.0.0",
-  "version": "2.0.2",
+  "version": "2.1.0",
   "properties": {
-    "githubRelease": "2.0.2"
+    "githubRelease": "2.1.0"
   },
   "inputSpec": [
     {
@@ -52,26 +52,42 @@
       "help": "Target intervals in BED format. Must be identical to the BED used to build the PoN reference. Chr-prefix chromosome names required."
     },
     {
+      "name": "diploid_parx_genome",
+      "class": "string",
+      "label": "Diploid pseudo-autosomal regions (genome build)",
+      "optional": true,
+      "choices": [
+        "grch38"
+      ],
+      "help": "Passed as --diploid-parx-genome to cnvkit.py fix, segment, call, genemetrics and diagram (and to the sex checks), so chrX PAR1/PAR2 are treated as diploid in both sexes. Must be grch38 for Atlas CGP and must match the PoN build. If empty, the flag is omitted, the PAR post-step does not run, and a warning is logged: raw-coverage sex QC can call male samples female."
+    },
+    {
       "name": "purity",
       "class": "float",
-      "label": "Tumour purity (0\u20131)",
+      "label": "Tumour purity (deprecated, ignored)",
       "optional": true,
-      "help": "Estimated tumour purity from PURPLE or another purity tool. When supplied and purity > 0.40, used for absolute integer CN calling (cnvkit.py call --purity). At purity \u2264 0.40, PURPLE's purity estimate is unreliable for WGD samples in FFPE cohorts; log2R threshold calling is used instead. If omitted, log2R thresholds are used for all calls."
+      "help": "Deprecated in 2.1.0 and ignored (DI-4121): CNVkit calls are made without --purity, as validated, and PURPLE is the source of absolute copy number. Kept so existing workflow wiring still runs; a warning is logged when it is supplied. To be removed in the next major version."
     },
     {
       "name": "ploidy",
       "class": "float",
-      "label": "Tumour ploidy",
-      "default": 2,
+      "label": "Tumour ploidy (deprecated, ignored)",
       "optional": true,
-      "help": "Estimated tumour ploidy from PURPLE. Accepts PURPLE's raw float output (e.g. 3.1). Used alongside purity for integer CN calling. Ignored if purity is not supplied or purity \u2264 0.40."
+      "help": "Deprecated in 2.1.0 and ignored (DI-4121): CNVkit calls are made without --ploidy, as validated. Kept so existing workflow wiring still runs; a warning is logged when it is supplied. To be removed in the next major version."
+    },
+    {
+      "name": "sex_override",
+      "class": "string",
+      "label": "Sex override (male or female)",
+      "optional": true,
+      "help": "Chromosomal sex to use instead of the LIMS letter: male, female, M or F (case-insensitive); any other value fails the job before analysis. Leave empty in routine use. Without it the sex comes from the LIMS letter, field 5 of the '-'-split sample ID (or of the BAM name when the sample ID has fewer than 5 fields): M gives -x male, F gives -x female, anything else no -x (CNVkit infers the sex from chrX). Must not be wired from PURPLE's inferred sex."
     },
     {
       "name": "sample_sex",
       "class": "string",
-      "label": "Sample chromosomal sex (male or female)",
+      "label": "Sample sex (deprecated, ignored)",
       "optional": true,
-      "help": "Chromosomal sex of the sample. Used to correct the chrX/Y baseline in the diagram plot (cnvkit.py diagram --sample-sex). If omitted, CNVkit guesses from chrX/Y coverage. Note: cnvkit.py scatter does not support sex correction \u2014 male samples will show a chrX band at log2R \u2248 -1 due to the mixed-gender PoN median."
+      "help": "Deprecated in 2.1.0 and ignored (D2): it is wired from PURPLE's inferred sex, which must not override the LIMS sex. Use sex_override instead. Kept so existing workflow wiring still runs; a warning is logged when it is supplied. To be removed in the next major version."
     },
     {
       "name": "drop_low_coverage",
@@ -80,6 +96,14 @@
       "default": true,
       "optional": true,
       "help": "When true, bins with very low read depth are removed before CBS segmentation. Passed as --drop-low-coverage to cnvkit.py segment. Recommended for FFPE samples. Default: true."
+    },
+    {
+      "name": "dropout_mask",
+      "class": "boolean",
+      "label": "Mask isolated probe dropouts before segmentation",
+      "default": true,
+      "optional": true,
+      "help": "When true (default; validated, DI-4139), isolated autosomal probe dropouts are given weight 0 in the segmentation input only: log2 < -3, in a run of at most 2 adjacent deep probes, with fewer than 10 raw read-equivalents (depth x length / 144). chrX/chrY are never masked. Every other step and the copy_ratios output use the unmasked .cnr. The masked probes are listed in dropout_qc. False disables the mask: segment reads the unmasked .cnr (the validated final configuration without the mask, arm A0; for troubleshooting and the equivalence test)."
     }
   ],
   "outputSpec": [
@@ -90,7 +114,7 @@
       "patterns": [
         "*.cnr"
       ],
-      "help": "Per-bin log2 copy ratios after PoN normalisation. Input to downstream segmentation and visualisation."
+      "help": "Per-bin log2 copy ratios after PoN normalisation (edge correction on). The unmasked file: the dropout mask only changes the segmentation input."
     },
     {
       "name": "segments",
@@ -99,7 +123,7 @@
       "patterns": [
         "*.cns"
       ],
-      "help": "CBS-segmented copy-number profile. One row per segment."
+      "help": "CBS-segmented copy-number profile, one row per segment, segmented on the dropout-masked copy of the .cnr (when dropout_mask is true)."
     },
     {
       "name": "call_segments",
@@ -108,7 +132,7 @@
       "patterns": [
         "*.call.cns"
       ],
-      "help": "Segments annotated with integer copy-number calls. Purity/ploidy-corrected when purity > 0.40; log2R thresholds otherwise."
+      "help": "Segments annotated with copy-number calls from the log2 ratio thresholds (CNVkit fc65941 defaults: amplification >= 0.7, gain >= 0.2, loss < -0.25, deletion < -1.1). No purity or ploidy adjustment."
     },
     {
       "name": "scatter_png",
@@ -128,7 +152,7 @@
         "*.diagram.pdf"
       ],
       "optional": true,
-      "help": "Chromosome-level ideogram with gene labels at CN-change sites (threshold 0.5 log2R, minimum 3 probes). Sex-corrected when sample_sex is supplied."
+      "help": "Chromosome-level ideogram with gene labels at CN-change sites (threshold 0.5 log2R, minimum 3 probes), with the same -x and --diploid-parx-genome as the calls."
     },
     {
       "name": "genemetrics",
@@ -137,7 +161,52 @@
       "patterns": [
         "*.genemetrics.tsv"
       ],
-      "help": "Tab-separated gene-level summary: gene, log2R, depth, weight, CN, probes. Filtered to genes with |log2R| > 0.3 and \u22653 probes."
+      "help": "Tab-separated gene-level summary (gene, log2, depth, weight, cn, probes, ...): genes with |log2| >= 0.3 and >= 3 probes. For samples treated as male, after the PAR post-step (PAR genes such as CRLF2 corrected for CNVkit's +1 chrX shift)."
+    },
+    {
+      "name": "genemetrics_noparfix",
+      "class": "file",
+      "label": "Gene metrics before the PAR post-step (.tsv)",
+      "patterns": [
+        "*.genemetrics.noparfix.tsv"
+      ],
+      "help": "The genemetrics read-out before the PAR post-step. Identical to genemetrics when the post-step did not run (samples not treated as male, or no diploid_parx_genome)."
+    },
+    {
+      "name": "sex_qc",
+      "class": "file",
+      "label": "Sex QC (.tsv)",
+      "patterns": [
+        "*.sex_qc.tsv"
+      ],
+      "help": "One row: LIMS sex, applied sex and its source (override / sample_name / bam_name / cnvkit_inference), chrY presence in the raw coverage (Y log-ratio > -5), X log-ratios from the raw coverage and the .cnr, sex_mismatch (declared sex vs chrY; 1 needs review), par_fix_applied, par_span_segments and dropout_probes."
+    },
+    {
+      "name": "sex_check_mqc",
+      "class": "file",
+      "label": "Sex QC for MultiQC (_mqc.tsv)",
+      "patterns": [
+        "*.sex_check_mqc.tsv"
+      ],
+      "help": "MultiQC custom-content table (id cnvkit_sex_check): lims_sex, chrY_sex, sex_mismatch, the X/Y log-ratios, applied_sex and dropout_probes."
+    },
+    {
+      "name": "dropout_qc",
+      "class": "file",
+      "label": "Masked probe dropouts (.tsv)",
+      "patterns": [
+        "*.dropout_qc.tsv"
+      ],
+      "help": "One row per probe masked before segmentation (arm, chromosome, start, end, gene, log2, raw_reads, reason; arm is always M). Header only when nothing is masked or dropout_mask is false."
+    },
+    {
+      "name": "target_coverage",
+      "class": "file",
+      "label": "On-target coverage (.targetcoverage.cnn)",
+      "patterns": [
+        "*.targetcoverage.cnn"
+      ],
+      "help": "Raw on-target coverage from cnvkit.py coverage: the input of fix and of the raw-coverage sex check; kept for audit and PoN rebuilds."
     }
   ],
   "runSpec": {
