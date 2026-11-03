@@ -5,13 +5,11 @@ data x dropout-mask configurations. The BAM-start run (4.8 GB download) is manua
 import pytest
 
 import run_local
-from test_equiv_parfix import docker_available
 from vdata import DATA, require
 
 pytestmark = [pytest.mark.validation, pytest.mark.docker]
 
 
-@pytest.mark.skipif(not docker_available(), reason="docker or cgp-cnvkit:1.0.0 not available")
 @pytest.mark.parametrize("data, mask", [("umi", "true"), ("umi", "false"), ("nonumi", "false"), ("nonumi", "true")])
 def test_local_harness(data, mask):
     require(DATA / data / "calls")

@@ -9,7 +9,6 @@ post-step genemetrics.tsv byte for byte, with the same par_check.
 import csv
 import os
 import shutil
-import subprocess
 import uuid
 
 import pytest
@@ -28,15 +27,6 @@ SETS = [
     ("nonumi", "A0", "nonumi/calls/A0", "A0_s2", "/d00/"),
     ("nonumi", "M", "nonumi/calls/M", "M_s2", "/d00/"),
 ]
-
-
-def docker_available():
-    if not shutil.which("docker"):
-        return False
-    try:
-        return subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True, timeout=30).returncode == 0
-    except subprocess.TimeoutExpired:
-        return False
 
 
 def lims_sex_arg(sample):
@@ -74,7 +64,6 @@ def port():
     return load_module(BIN / "cnvkit_parfix.py", "cnvkit_parfix_port")
 
 
-@pytest.mark.skipif(not docker_available(), reason=f"docker or {IMAGE} not available")
 @pytest.mark.parametrize("dataset, arm, calls, log_arm, rundir_filter", SETS, ids=[f"{s[0]}-{s[1]}" for s in SETS])
 def test_parfix_equivalence(tmp_path, port, dataset, arm, calls, log_arm, rundir_filter):
     calls = require(DATA / calls)

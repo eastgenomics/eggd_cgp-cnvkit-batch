@@ -6,12 +6,10 @@ import uuid
 import pytest
 
 import run_local
-from test_equiv_parfix import docker_available
 
 pytestmark = [pytest.mark.validation, pytest.mark.docker]
 
 
-@pytest.mark.skipif(not docker_available(), reason="docker or cgp-cnvkit:1.0.0 not available")
 def test_timeout_stops_only_run_container(tmp_path, monkeypatch):
     token, other_token = uuid.uuid4().hex, uuid.uuid4().hex
     name, other = f"cnvkit-harness-{token}", f"cnvkit-harness-control-{other_token}"

@@ -12,7 +12,7 @@ import subprocess
 
 import pytest
 
-from test_equiv_parfix import docker_available, in_image
+from test_equiv_parfix import in_image
 from vdata import BIN, DATA, REFERENCE, REPO, load_module, require, sequencings
 
 pytestmark = [pytest.mark.validation, pytest.mark.docker]
@@ -39,7 +39,6 @@ def one_row_table(path, sample_file, r):
     return path
 
 
-@pytest.mark.skipif(not docker_available(), reason="docker or cgp-cnvkit:1.0.0 not available")
 def test_no_parx_raw_and_cnr_inference_are_distinct(tmp_path):
     # A no-PARX fix run on a LIMS-M sample: the raw-coverage and .cnr sex calls are not interchangeable.
     rows = read_tsv(REPO / "tests" / "harness" / "local_samples.tsv")
@@ -59,7 +58,6 @@ def test_no_parx_raw_and_cnr_inference_are_distinct(tmp_path):
     assert read_tsv(cnr_sex)[0]["sex"] == "Male"
 
 
-@pytest.mark.skipif(not docker_available(), reason="docker or cgp-cnvkit:1.0.0 not available")
 @pytest.mark.parametrize("dataset", ["umi", "nonumi"])
 def test_sex_qc_equivalence(tmp_path, dataset):
     port = load_module(BIN / "cnvkit_sex_qc.py", "cnvkit_sex_qc_port")
