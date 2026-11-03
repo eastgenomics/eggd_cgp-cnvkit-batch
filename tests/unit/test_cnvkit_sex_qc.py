@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from cnvfiles import BIN, REFERENCE
+from procutil import SCRIPT_TIMEOUT
 
 pytestmark = pytest.mark.unit
 
@@ -17,7 +18,8 @@ U = "135024088-25021S0072-26CGPVal1SHv150kb-9999-U-1111"
 
 
 def run(*argv):
-    return subprocess.run([sys.executable, str(SCRIPT), *map(str, argv)], capture_output=True, text=True)
+    return subprocess.run([sys.executable, str(SCRIPT), *map(str, argv)], capture_output=True, text=True,
+                          timeout=SCRIPT_TIMEOUT)
 
 
 def resolve(sample_id, bam_name="", override=""):
@@ -246,7 +248,7 @@ def test_matches_reference(tmp_path, sample, raw_y, raw_x, raw_sex, cnr_sex):
     cnr = tmp_path / "cnr.tsv"
     cnr.write_text(f"sample\tsex\tX_logratio\tY_logratio\n{run_name}__{sample}.cnr\t{cnr_sex}\t-0.94\tnan\n")
     subprocess.run([sys.executable, str(REFERENCE / "sex_check.py"), "--raw-sex", raw, "--cnr-sex", cnr,
-                    "--out", tmp_path / "ref"], check=True, capture_output=True)
+                    "--out", tmp_path / "ref"], check=True, capture_output=True, timeout=SCRIPT_TIMEOUT)
     sex_arg, source, lims, declared = resolve(sample)
     p = run("qc", "--sample-id", sample, "--raw-sex", raw, "--cnr-sex", cnr, "--lims-sex", lims, "--override-sex", "U",
             "--applied-source", source, "--par-fix-applied", "0", "--par-span-segments", "0", "--dropout-probes", "0",

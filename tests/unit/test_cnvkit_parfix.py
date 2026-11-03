@@ -8,6 +8,7 @@ import sys
 import pytest
 
 from cnvfiles import BIN, REFERENCE
+from procutil import SCRIPT_TIMEOUT
 
 pytestmark = pytest.mark.unit
 
@@ -36,14 +37,23 @@ def load_reference():
     ns = {"par_state": m.par_state}
     exec(src, ns)
     m.shift_par = ns["shift_par"]
+    # the pinned driver's own subprocesses (docker run, cnvkit.py sex) have no timeout; the tests use only its pure
+    # functions, so any call into its subprocess module fails at once instead of hanging
+    m.subprocess = NoSubprocess()
     return m
+
+
+class NoSubprocess:
+    def __getattr__(self, name):
+        raise AssertionError(f"reference genemetrics_parfix.py: subprocess.{name} is not allowed in the tests")
 
 
 port, ref = load_port(), load_reference()
 
 
 def run(*argv):
-    return subprocess.run([sys.executable, str(SCRIPT), *map(str, argv)], capture_output=True, text=True)
+    return subprocess.run([sys.executable, str(SCRIPT), *map(str, argv)], capture_output=True, text=True,
+                          timeout=SCRIPT_TIMEOUT)
 
 
 # ── PAR geometry ─────────────────────────────────────────────────────────────

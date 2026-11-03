@@ -2,18 +2,21 @@
 
 The job environment is reproduced as DNAnexus sets it up: each input is an environment variable, file inputs
 hold a `{"$dnanexus_link": ...}` JSON value, and inputs not supplied take their `dxapp.json` default (or stay
-unset). Nothing touches DNAnexus or Docker.
+unset). Nothing touches DNAnexus or Docker. The run is bounded: on timeout the whole process group (bash and every
+descendant) is killed and subprocess.TimeoutExpired is raised.
 """
 import dataclasses
 import json
 import os
-import subprocess
 from pathlib import Path
+
+from procutil import run_group
 
 REPO = Path(__file__).resolve().parents[2]
 STUBS = Path(__file__).resolve().parent / "stubs"
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 DXAPP = json.loads((REPO / "dxapp.json").read_text())
+RUN_TIMEOUT = 120   # seconds per app run under the stubs
 
 SAMPLE = "140609591-25328S0023-26CGPV2-8475-M-96770770"
 FILE_IDS = {"tumour_bam": "file-BAM", "tumour_bai": "file-BAI", "baits": "file-BAITS", "cn_reference": "file-PON"}
@@ -56,7 +59,8 @@ def _env_value(value):
     return str(value)
 
 
-def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/code.sh", stub_env=None):
+def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/code.sh", stub_env=None,
+            timeout=RUN_TIMEOUT):
     """Run `main` from `script` in a fresh work directory under tmp_path.
 
     inputs: input name -> value (None removes an input); names: file ID -> name returned by `dx describe`;
@@ -91,9 +95,9 @@ def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/
     }
     env.update(stub_env or {})
     env.update({k: _env_value(v) for k, v in base_inputs.items()})
-    proc = subprocess.run(
+    proc = run_group(
         ["bash", "-c", 'set -eo pipefail; source "$1"; main', "app", str(REPO / script)],
-        cwd=work, env=env, capture_output=True, text=True, timeout=120,
+        timeout, cwd=work, env=env, capture_output=True, text=True,
     )
 
     def jsonl(name):
@@ -108,7 +112,7 @@ def run_app(tmp_path, inputs=None, names=None, fail=(), files=None, script="src/
     )
 
 
-def run_pipeline_direct(tmp_path, env, files=None, stub_env=None):
+def run_pipeline_direct(tmp_path, env, files=None, stub_env=None, timeout=RUN_TIMEOUT):
     """Source pipeline.sh and call run_pipeline directly (no code.sh), with the docker stub as run_cnvkit.
 
     env: the pipeline's environment (SAMPLE_ID, START_FROM, ...); files: {name: content} written to the work dir.
@@ -124,8 +128,8 @@ def run_pipeline_direct(tmp_path, env, files=None, stub_env=None):
     script = ('set -eo pipefail; source "$1"; '
               'run_cnvkit() { docker run --rm -v "$(pwd)":/work -w /work cgp-cnvkit:1.0.0 cnvkit.py "$@"; }; '
               'run_pipeline')
-    proc = subprocess.run(["bash", "-c", script, "pipeline", str(lib)], cwd=work, env=full_env,
-                          capture_output=True, text=True, timeout=120)
+    proc = run_group(["bash", "-c", script, "pipeline", str(lib)], timeout, cwd=work, env=full_env,
+                     capture_output=True, text=True)
     docker = [json.loads(line) for line in (log / "docker.jsonl").read_text().splitlines()] \
         if (log / "docker.jsonl").exists() else []
     return AppRun(returncode=proc.returncode, stdout=proc.stdout, stderr=proc.stderr, workdir=work, docker=docker,

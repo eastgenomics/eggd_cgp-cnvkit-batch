@@ -38,6 +38,7 @@ OUTPUTS = ["copy_ratios", "segments", "call_segments", "genemetrics", "genemetri
 
 DX_TIMEOUT = 300          # seconds, for API calls; transfers and log streams get LONG_TIMEOUT
 LONG_TIMEOUT = 4 * 3600
+GIT_TIMEOUT = 60
 LONG = {"download", "upload", "watch", "build"}
 
 
@@ -130,11 +131,12 @@ def prepare(_):
 
 def build(_):
     # every file dx build could include (tracked or untracked, not ignored) must be committed
-    status = subprocess.run(["git", "status", "--porcelain"], cwd=REPO, capture_output=True, text=True, check=True)
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=REPO, capture_output=True, text=True, check=True,
+                            timeout=GIT_TIMEOUT)
     if status.stdout.strip():
         sys.exit("commit the working tree first: the applet must be built from a recorded commit\n" + status.stdout)
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True,
-                         text=True).stdout.strip()
+                         text=True, check=True, timeout=GIT_TIMEOUT).stdout.strip()
     folder = f"{ROOT}/applet/{sha}"
     dx("mkdir", "-p", f"{PROJECT}:{folder}")
     try:

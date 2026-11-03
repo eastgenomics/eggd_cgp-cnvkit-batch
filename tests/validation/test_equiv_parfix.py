@@ -10,14 +10,17 @@ import csv
 import os
 import shutil
 import subprocess
+import uuid
 
 import pytest
 
+from procutil import remove_container, run_group
 from vdata import BIN, DATA, load_module, require, sequencings
 
 pytestmark = [pytest.mark.validation, pytest.mark.docker]
 
 IMAGE = "cgp-cnvkit:1.0.0"
+IMAGE_TIMEOUT = 3600   # seconds per `docker run` (the batched genemetrics / sex calls over the 226 sequencings)
 GM_ARGS = ["-t", "0.3", "--min-probes", "3", "--diploid-parx-genome", "grch38"]
 # (dataset, arm label, call directory, arm name in parfix_log, rundir filter)
 SETS = [
@@ -28,8 +31,12 @@ SETS = [
 
 
 def docker_available():
-    return shutil.which("docker") and subprocess.run(["docker", "image", "inspect", IMAGE],
-                                                     capture_output=True).returncode == 0
+    if not shutil.which("docker"):
+        return False
+    try:
+        return subprocess.run(["docker", "image", "inspect", IMAGE], capture_output=True, timeout=30).returncode == 0
+    except subprocess.TimeoutExpired:
+        return False
 
 
 def lims_sex_arg(sample):
@@ -38,11 +45,14 @@ def lims_sex_arg(sample):
 
 
 def in_image(tmp_path, script):
-    """Run a shell script in the image with the data (read-only) and tmp_path mounted at their own paths."""
-    cmd = ["docker", "run", "--rm", "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp", "-e", "MPLCONFIGDIR=/tmp",
+    """Run a shell script in the image with the data (read-only) and tmp_path mounted at their own paths. The
+    container is named, so a timed-out run (client process group killed) also removes its container."""
+    name = f"cnvkit-l3-{uuid.uuid4().hex}"
+    cmd = ["docker", "run", "--rm", "--name", name, "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
+           "-e", "MPLCONFIGDIR=/tmp",
            "-v", f"{DATA.resolve()}:{DATA.resolve()}:ro", "-v", f"{tmp_path}:{tmp_path}", "-w", str(tmp_path),
            IMAGE, "bash", "-c", script]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
+    proc = run_group(cmd, IMAGE_TIMEOUT, on_timeout=lambda: remove_container(name), capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr[-3000:]
 
 

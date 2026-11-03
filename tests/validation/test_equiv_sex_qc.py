@@ -77,7 +77,8 @@ def test_sex_qc_equivalence(tmp_path, dataset):
             a.write(f"{run}__{s}.targetcoverage.cnn\t{r['sex']}\t{r['X_logratio']}\t{r['Y_logratio']}\n")
             b.write(f"{run}__{s}.cnr\t{c['sex']}\t{c['X_logratio']}\t{c['Y_logratio']}\n")
     subprocess.run(["python3", str(REFERENCE / "sex_check.py"), "--raw-sex", tmp_path / "ref_raw.tsv",
-                    "--cnr-sex", tmp_path / "ref_cnr.tsv", "--out", tmp_path / "ref"], check=True, capture_output=True)
+                    "--cnr-sex", tmp_path / "ref_cnr.tsv", "--out", tmp_path / "ref"], check=True, capture_output=True,
+                   timeout=600)
     ref = {(r["run"], r["sample"]): r for r in read_tsv(tmp_path / "ref.sex_qc.tsv")}
     assert set(ref) == set(seqs)
 

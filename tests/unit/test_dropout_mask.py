@@ -7,6 +7,7 @@ import sys
 import pytest
 
 from cnvfiles import BIN, CNN_HEADER, CNR_HEADER, REFERENCE, bins, cnn_rows, cnr_rows, write_table
+from procutil import SCRIPT_TIMEOUT
 
 pytestmark = pytest.mark.unit
 
@@ -22,7 +23,7 @@ def run_mask(tmp_path, bin_list, depth=0.0, script=SCRIPT, tag="new"):
         args = ["mask", str(cnr), str(cnn), str(out), str(qc)]
     else:  # the pinned reference retains the validation CLI
         args = ["mask", "M", str(cnr), str(cnn), "spec", "-", str(out), str(qc)]
-    proc = subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True)
+    proc = subprocess.run([sys.executable, str(script), *args], capture_output=True, text=True, timeout=SCRIPT_TIMEOUT)
     assert proc.returncode == 0, proc.stderr
     return cnr, out, qc, proc.stdout
 
@@ -102,7 +103,7 @@ def test_bin_absent_from_coverage_counts_as_zero_reads(tmp_path):
     cnn = write_table(tmp_path / "s.cnn", CNN_HEADER, cnn_rows([b[0], b[2]], 500.0))   # deep bin missing
     out, qc = tmp_path / "o.cnr", tmp_path / "q.tsv"
     subprocess.run([sys.executable, str(SCRIPT), "mask", str(cnr), str(cnn), str(out), str(qc)],
-                   check=True, capture_output=True)
+                   check=True, capture_output=True, timeout=SCRIPT_TIMEOUT)
     assert masked(out) == [1]
     assert qc_rows(qc)[0][6] == "0.0"
 
@@ -145,7 +146,7 @@ def test_header_only_qc_when_nothing_masked(tmp_path):
 def test_qc_header_subcommand_matches_mask_output(tmp_path):
     _, _, qc, _ = run_mask(tmp_path, bins([0.1, 0.2]))
     hdr = tmp_path / "header_only.tsv"
-    subprocess.run([sys.executable, str(SCRIPT), "qc-header", str(hdr)], check=True)
+    subprocess.run([sys.executable, str(SCRIPT), "qc-header", str(hdr)], check=True, timeout=SCRIPT_TIMEOUT)
     assert hdr.read_bytes() == qc.read_bytes()
 
 
@@ -159,7 +160,8 @@ def test_qc_header_subcommand_matches_mask_output(tmp_path):
     ([], "Usage"),
 ])
 def test_cli_rejects(tmp_path, argv, message):
-    proc = subprocess.run([sys.executable, str(SCRIPT), *argv], capture_output=True, text=True, cwd=tmp_path)
+    proc = subprocess.run([sys.executable, str(SCRIPT), *argv], capture_output=True, text=True, cwd=tmp_path,
+                          timeout=SCRIPT_TIMEOUT)
     assert proc.returncode != 0
     assert message in proc.stderr
 

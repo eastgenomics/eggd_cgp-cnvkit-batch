@@ -32,6 +32,7 @@ PROJECT = "project-JF3p1f04Yggp0vf3PYjy7Q0F"
 REPO = Path(__file__).resolve().parents[2]
 DATA = Path(os.environ.get("CNVKIT_VALIDATION_DATA", REPO / "tests" / ".data" / "validation"))
 DOWNLOADS = DATA / "_downloads"
+DOWNLOAD_TIMEOUT = 4 * 3600   # seconds per `dx download` (archives up to ~0.5 GB)
 RUNS = r"(0734_Val1_50kb|0786_V1|0797_V2|0811_V3)"
 
 # (set, name, file ID, sha256 of the downloaded file, [(member regex, destination template)] or a destination path)
@@ -118,7 +119,7 @@ def download(name, fid):
         ref = f"{PROJECT}:{fid[5:]}" if fid.startswith("file:") else f"{PROJECT}:{fid}"
         print(f"  download {name}", flush=True)
         subprocess.run(["dx", "download", "-f", ref, "-o", str(dest) + ".part"], check=True,
-                       stdout=subprocess.DEVNULL)
+                       stdout=subprocess.DEVNULL, timeout=DOWNLOAD_TIMEOUT)
         os.replace(str(dest) + ".part", dest)
     return dest
 
