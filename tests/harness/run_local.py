@@ -32,7 +32,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(REPO / "tests" / "validation"))
-from vdata import DATA  # noqa: E402
+from vdata import DATA  # noqa: E402 -- tests/validation is put on sys.path above (not a package)
 
 HARNESS = REPO / "tests" / ".data" / "harness"
 LIB = REPO / "resources" / "usr" / "local" / "lib" / "cgp_cnvkit_batch" / "pipeline.sh"

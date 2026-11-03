@@ -22,8 +22,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(REPO / "tests" / "validation"), str(REPO / "tests" / "harness")]
-from vdata import DATA  # noqa: E402
-import run_local  # noqa: E402
+from vdata import DATA  # noqa: E402 -- tests/validation is put on sys.path above (not a package)
+import run_local  # noqa: E402 -- tests/harness is put on sys.path above (not a package)
 
 PROJECT = "project-JF3p1f04Yggp0vf3PYjy7Q0F"
 ROOT = "/batch_app_v2.1.0"
