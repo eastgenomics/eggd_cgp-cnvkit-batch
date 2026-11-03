@@ -315,6 +315,49 @@ def test_sex_qc_failure_is_fatal(tmp_path):
     assert run.outputs == {}
 
 
+@pytest.mark.parametrize("parx", [{}, PARX])
+@pytest.mark.parametrize("stub_env, message", [
+    ({"STUB_RAW_Y": "garbage"}, "Y_logratio 'garbage' is not a number"),
+    ({"STUB_RAW_Y": ""}, "Y_logratio '' is not a number"),
+    ({"STUB_RAW_SEX_ROW": "{sample}\tMale\t-0.971"}, "the sample row has 3 fields"),     # short row: no Y value
+    ({"STUB_RAW_SEX": "Unknown"}, "sex 'Unknown' is not one of Male, Female"),
+    ({"STUB_CNR_SEX_ROW": "{sample}\tMale\t-0.945"}, "the sample row has 3 fields"),
+    ({"STUB_CNR_SEX_ROW": "{sample}\tMale\tgarbage\tnan"}, "X_logratio 'garbage' is not a number"),
+])
+def test_malformed_sex_table_fails_the_job(tmp_path, parx, stub_env, message):
+    # A2: malformed CNVkit sex output fails the job instead of reading as no chrY / female
+    run = run_app(tmp_path, parx, stub_env=stub_env)
+    assert run.returncode != 0
+    assert message in run.stderr
+    assert run.outputs == {} and run.uploads == []
+
+
+@pytest.mark.parametrize("cnr_sex", ["garbage", "male", "Unknown"])
+def test_invalid_inferred_sex_fails_the_parfix_decision(tmp_path, cnr_sex):
+    # A2: an invalid .cnr sex call must not read as "not Male" and skip the PAR post-step
+    from apprun import default_inputs
+    inputs, names = default_inputs(sample_id=U_SAMPLE)
+    inputs.update(PARX)
+    run = run_app(tmp_path, inputs, names, stub_env={"STUB_CNR_SEX": cnr_sex})
+    assert run.returncode != 0
+    assert "cnvkit_parfix.py decide: FAILED" in run.stderr and f"sex {cnr_sex!r} is not Male or Female" in run.stderr
+    assert "[parfix] not applied" not in run.stdout
+    assert run.outputs == {}
+
+
+@pytest.mark.parametrize("sample", ["patient__01", "sample.cnr", "sample.cnn", "x.targetcoverage.cnn"])
+def test_sample_id_with_separator_or_suffix_completes(tmp_path, sample):
+    # A3: accepted sample IDs containing `__` or ending in .cnr/.cnn are matched whole in the sex tables
+    from apprun import default_inputs
+    inputs, names = default_inputs(sample_id=sample)
+    inputs.update(PARX)
+    run = run_app(tmp_path, inputs, names)
+    assert run.returncode == 0, run.stderr
+    assert sex_qc_row(run, sample)["sample"] == sample
+    assert {k: v["value"] for k, v in run.outputs.items()} == \
+        {k: f"file-{v.replace(S, sample)}" for k, v in ALL_OUTPUTS.items()}
+
+
 def test_uploaded_files_are_the_final_versions(tmp_path):
     # genemetrics = the post-step read-out; copy_ratios = the unmasked .cnr
     env = dict(parfix_fixtures(tmp_path), **masked_fixtures(tmp_path))

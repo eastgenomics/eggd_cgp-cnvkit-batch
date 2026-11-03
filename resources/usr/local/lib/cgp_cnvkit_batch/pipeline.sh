@@ -195,7 +195,7 @@ run_pipeline() {
     cp "${s}.genemetrics.tsv" "${s}.genemetrics.noparfix.tsv"
     local decision
     decision=$(cnvkit_parfix.py decide --sex-arg "${SEX_ARG}" --cnr-sex "${s}.sex_cnr.tsv" \
-        --parx "${DIPLOID_PARX_GENOME:-}")
+        --parx "${DIPLOID_PARX_GENOME:-}") || return 1
     PAR_FIX_APPLIED=$(cut -f1 <<< "${decision}")
     PAR_SPAN_SEGMENTS=0
     if [ "${PAR_FIX_APPLIED}" = "1" ]; then
@@ -228,5 +228,5 @@ run_pipeline() {
     cnvkit_sex_qc.py qc --sample-id "${s}" --raw-sex "${s}.sex_raw.tsv" --cnr-sex "${s}.sex_cnr.tsv" \
         --lims-sex "${LIMS_SEX}" --override-sex "${override_sex}" --applied-source "${SEX_SOURCE}" \
         --par-fix-applied "${PAR_FIX_APPLIED}" --par-span-segments "${PAR_SPAN_SEGMENTS}" \
-        --dropout-probes "${DROPOUT_PROBES}" --out "${s}"
+        --dropout-probes "${DROPOUT_PROBES}" --out "${s}" || return 1
 }

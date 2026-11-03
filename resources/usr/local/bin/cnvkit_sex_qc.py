@@ -11,7 +11,12 @@ where D8 extends them:
     `applied_sex` gives the inferred sex for samples without -x, e.g. `cnvkit_inferred(Male)`;
   - `sex_mismatch` compares the declared sex (override, else LIMS) with chrY; with no override it is sex_check.py's;
   - appended columns `par_fix_applied`, `par_span_segments`, `dropout_probes`; the MultiQC table adds
-    `dropout_probes`.
+    `dropout_probes`;
+  - the `cnvkit.py sex` tables are validated (port addition): one sample row with every column, a Male / Female
+    call and numeric log-ratios, where CNVkit's literal `nan` (no usable bins) is the one non-numeric value
+    accepted (a `nan` raw Y log-ratio: no chrY, as sex_check.py). The row must name the expected file,
+    <sample>.targetcoverage.cnn / <sample>.cnr, optionally <run>__-prefixed; the whole sample ID is matched. Anything
+    else is malformed: exit 2.
 Validation: the chrY rule and the -5 cut-off, Confluence DV 4854120471 test 4 (non-UMI) and FINAL_RESULTS.md.
 
 Usage
@@ -21,11 +26,12 @@ Usage
   cnvkit_sex_qc.py qc --sample-id ID --raw-sex RAW.tsv --cnr-sex CNR.tsv --lims-sex M|F|U --override-sex M|F|U
                       --applied-source SRC --par-fix-applied 0|1 --par-span-segments N --dropout-probes N
                       --out PREFIX [--run RUN]
-      writes PREFIX.sex_qc.tsv and PREFIX.sex_check_mqc.tsv
+      writes PREFIX.sex_qc.tsv and PREFIX.sex_check_mqc.tsv; exit 2 on a malformed or mismatched sex table
 """
 import argparse
 import csv
 import os
+import re
 import sys
 
 Y_PRESENT = -5.0
@@ -72,27 +78,62 @@ def resolve(sample_id, bam_name, override):
 
 
 def fnum(x):
-    try:
-        return float(x)
-    except (TypeError, ValueError):
-        return float('nan')
+    """A validated log-ratio (see check_sex_row) as a float; CNVkit's literal `nan` is NaN."""
+    return float(x)
 
 
-def one_row(path, sample):
-    rows = list(csv.DictReader(open(path), delimiter='\t'))
-    if len(rows) != 1:
-        raise ValueError(f'{path}: expected one sample row, found {len(rows)}')
-    b = os.path.basename(rows[0]['sample']).rpartition('__')[2]
-    for ext in ('.targetcoverage.cnn', '.cnr', '.cnn'):
-        if b.endswith(ext):
-            b = b[:-len(ext)]
-    if b != sample:
-        raise ValueError(f'{path}: sample {b!r} is not {sample!r}')
-    return rows[0]
+SEX_COLUMNS = ('sample', 'sex', 'X_logratio', 'Y_logratio')
+SEX_VALUES = ('Male', 'Female')
+# a `cnvkit.py sex` log-ratio: '%.3g' with a sign ('+0.116', '-1.13', '-1.2e+03'), or the literal 'nan' CNVkit writes
+# when a chromosome has no usable bins (chrY in a .cnr; the policy: no chrY). Anything else is malformed.
+NUMBER = re.compile(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[+-]?inf|nan')
+
+
+def check_sex_row(path, header, row):
+    """Raise ValueError unless a `cnvkit.py sex` row has every required column and a value for it, numeric (or
+    `nan`) log-ratios and a Male / Female call."""
+    missing = [c for c in SEX_COLUMNS if c not in header]
+    if missing:
+        raise ValueError(f'{path}: missing column(s) {", ".join(missing)} (columns: {", ".join(header)})')
+    if len(row) != len(header):
+        raise ValueError(f'{path}: the sample row has {len(row)} fields, the header {len(header)}')
+    r = dict(zip(header, row))
+    if r['sex'] not in SEX_VALUES:
+        raise ValueError(f"{path}: sex {r['sex']!r} is not one of {', '.join(SEX_VALUES)}")
+    for c in ('X_logratio', 'Y_logratio'):
+        if not NUMBER.fullmatch(r[c]):
+            raise ValueError(f"{path}: {c} {r[c]!r} is not a number (or CNVkit's literal nan)")
+    return r
+
+
+def read_sex_table(path):
+    """The one sample row of a `cnvkit.py sex` table, validated (check_sex_row)."""
+    with open(path, newline='') as fh:
+        rows = [r for r in csv.reader(fh, delimiter='\t') if r]
+    if not rows:
+        raise ValueError(f'{path}: empty table')
+    if len(rows) != 2:
+        raise ValueError(f'{path}: expected one sample row, found {len(rows) - 1}')
+    return check_sex_row(path, rows[0], rows[1])
+
+
+def table_sample(path, name, sample, suffix):
+    """Check that a sex-table `sample` value is the file <sample><suffix>, optionally run-prefixed as
+    <run>__<sample><suffix> (the validation tables). The whole sample ID is matched, so IDs containing `__` or
+    ending in `.cnr` / `.cnn` are not split or stripped."""
+    b, want = os.path.basename(name), sample + suffix
+    if b != want and not (b.endswith('__' + want) and len(b) > len(want) + 2):
+        raise ValueError(f'{path}: sample {b!r} is not {want!r} (or <run>__{want})')
+
+
+def one_row(path, sample, suffix):
+    r = read_sex_table(path)
+    table_sample(path, r['sample'], sample, suffix)
+    return r
 
 
 def qc_row(a):
-    raw, c = one_row(a.raw_sex, a.sample_id), one_row(a.cnr_sex, a.sample_id)
+    raw, c = one_row(a.raw_sex, a.sample_id, '.targetcoverage.cnn'), one_row(a.cnr_sex, a.sample_id, '.cnr')
     if a.applied_source not in SOURCES:
         raise ValueError(f'applied source {a.applied_source!r} not one of {SOURCES}')
     ry = fnum(raw['Y_logratio'])

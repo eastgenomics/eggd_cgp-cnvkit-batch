@@ -116,6 +116,33 @@ def test_decide_cli_rejects_multi_sample_table(tmp_path):
     assert proc.returncode != 0 and "expected one sample row" in proc.stderr
 
 
+@pytest.mark.parametrize("body, message", [
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-0.95\n", "the sample row has 3 fields"),   # short row
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\n", "the sample row has 1 fields"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tgarbage\t-0.95\tnan\n", "is not Male or Female"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tmale\t-0.95\tnan\n", "is not Male or Female"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tUnknown\tNA\tNA\n", "is not Male or Female"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\t\t-0.95\tnan\n", "is not Male or Female"),
+    ("sample\tX_logratio\tY_logratio\ns.cnr\t-0.95\tnan\n", "not a cnvkit.py sex table"),
+    ("sample\tsex\tX_logratio\tY_logratio\n", "expected one sample row, found 0"),
+    ("", "expected one sample row, found 0"),
+])
+@pytest.mark.parametrize("sex_arg", ["", "male", "female"])
+def test_decide_cli_rejects_malformed_table(tmp_path, body, message, sex_arg):
+    # a malformed .cnr sex table must fail, not read as "not Male" and silently skip the post-step
+    sex = tmp_path / "sex_cnr.tsv"
+    sex.write_text(body)
+    proc = run("decide", "--sex-arg", sex_arg, "--cnr-sex", sex, "--parx", "grch38")
+    assert proc.returncode == 1 and message in proc.stderr and proc.stdout == ""
+
+
+@pytest.mark.parametrize("inferred", ["garbage", "", "male", "Unknown", None])
+def test_decide_rejects_invalid_inferred_sex(inferred):
+    with pytest.raises(ValueError, match="is not Male or Female"):
+        port.decide("", inferred, "grch38")
+    assert port.decide("male", inferred, "grch38")[0] is True     # -x given: the inference is not consulted
+
+
 # ── compare ──────────────────────────────────────────────────────────────────
 
 NONPAR = "TP53\tchr17\t7661779\t7687538\t-0.62\t400\t5\t1\t10\t5\t10\n"

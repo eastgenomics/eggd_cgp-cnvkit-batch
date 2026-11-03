@@ -24,7 +24,7 @@ diploid in a male, so every PAR gene (on this panel: CRLF2) is reported 1.0 too 
 
 Usage
   cnvkit_parfix.py decide  --sex-arg male|female|'' --cnr-sex <sex_cnr.tsv> --parx grch38|''
-      prints "<1|0>\t<reason>"
+      prints "<1|0>\t<reason>"; exit 1 if the table is malformed or its sex call is not Male / Female
   cnvkit_parfix.py shift   <s.cnr> <s.call.cns> <outdir>
       writes <outdir>/<s.cnr>, <outdir>/<s.call.cns>; prints "par_bins=N span_bins=N par_segs=N span_segs=N"
   cnvkit_parfix.py compare <original.genemetrics.tsv> <new.genemetrics.tsv> <s.call.cns>
@@ -70,11 +70,21 @@ def shift_par(src, dst, start_col, log2_col):
 
 
 def cnr_sex(path):
-    """The `sex` call from a one-sample `cnvkit.py sex` table."""
-    rows = list(csv.DictReader(open(path), delimiter='\t'))
-    if len(rows) != 1:
-        raise ValueError(f'{path}: expected one sample row, found {len(rows)}')
-    return rows[0]['sex']
+    """The `sex` call from a one-sample `cnvkit.py sex` table: Male or Female (anything else is malformed and raises
+    ValueError, so a bad table cannot silently skip the post-step)."""
+    with open(path, newline='') as fh:
+        rows = [r for r in csv.reader(fh, delimiter='\t') if r]
+    if len(rows) != 2:
+        raise ValueError(f'{path}: expected one sample row, found {max(len(rows) - 1, 0)}')
+    header, row = rows
+    if 'sex' not in header or 'sample' not in header:
+        raise ValueError(f'{path}: not a cnvkit.py sex table (columns: {", ".join(header)})')
+    if len(row) != len(header):
+        raise ValueError(f'{path}: the sample row has {len(row)} fields, the header {len(header)}')
+    sex = row[header.index('sex')]
+    if sex not in ('Male', 'Female'):
+        raise ValueError(f'{path}: sex {sex!r} is not Male or Female')
+    return sex
 
 
 def decide(sex_arg, inferred, parx):
@@ -87,6 +97,8 @@ def decide(sex_arg, inferred, parx):
         return True, '-x male'
     if sex_arg == 'female':
         return False, '-x female'
+    if inferred not in ('Male', 'Female'):
+        raise ValueError(f'cnvkit.py sex on the .cnr: {inferred!r} is not Male or Female')
     if inferred == 'Male':
         return True, 'no -x; cnvkit.py sex on the .cnr: Male'
     return False, f'no -x; cnvkit.py sex on the .cnr: {inferred}'

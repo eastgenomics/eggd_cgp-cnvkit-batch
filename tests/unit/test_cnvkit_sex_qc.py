@@ -83,7 +83,7 @@ def row(path):
 
 
 @pytest.mark.parametrize("raw_y, present", [("-1.13", 1), ("-4.99", 1), ("-5", 0), ("-5.0", 0), ("-19.9", 0),
-                                            ("nan", 0), ("", 0)])
+                                            ("+0.116", 1), ("-2.1e+01", 0), ("nan", 0)])
 def test_chry_presence(tmp_path, raw_y, present):
     p, out, _ = qc(tmp_path, U, raw_y, "U")
     assert p.returncode == 0, p.stderr
@@ -143,6 +143,91 @@ def test_qc_rejects_wrong_table(tmp_path, bad):
             "--applied-source", "sample_name", "--par-fix-applied", "1", "--par-span-segments", "0",
             "--dropout-probes", "0", "--out", tmp_path / "s")
     assert p.returncode == 2
+
+
+HDR = "sample\tsex\tX_logratio\tY_logratio\n"
+MALFORMED = [
+    ("{f}\tMale\t-0.97\n", "the sample row has 3 fields"),           # short row: Y value missing
+    ("{f}\tMale\n", "the sample row has 2 fields"),
+    ("{f}\tMale\t-0.97\t-1.1\textra\n", "the sample row has 5 fields"),
+    ("{f}\tMale\t-0.97\tgarbage\n", "Y_logratio 'garbage' is not a number"),
+    ("{f}\tMale\t-0.97\t\n", "Y_logratio '' is not a number"),
+    ("{f}\tMale\t-0.97\tNA\n", "Y_logratio 'NA' is not a number"),
+    ("{f}\tMale\t-0.97\tNaN\n", "Y_logratio 'NaN' is not a number"),
+    ("{f}\tMale\t-0.97\t 1.0\n", "Y_logratio ' 1.0' is not a number"),
+    ("{f}\tMale\tgarbage\t-1.1\n", "X_logratio 'garbage' is not a number"),
+    ("{f}\tgarbage\t-0.97\t-1.1\n", "sex 'garbage' is not one of Male, Female"),
+    ("{f}\tmale\t-0.97\t-1.1\n", "sex 'male' is not one of Male, Female"),
+    ("{f}\tUnknown\tNA\tNA\n", "sex 'Unknown' is not one of Male, Female"),
+    ("", "expected one sample row, found 0"),                       # header only
+    ("{f}\tMale\t-0.97\t-1.1\n{f}\tMale\t-0.97\t-1.1\n", "expected one sample row, found 2"),
+    (None, "empty table"),
+]
+
+
+def qc_tables(tmp_path, sample, raw_body, cnr_body):
+    raw, cnr = tmp_path / "raw.tsv", tmp_path / "cnr.tsv"
+    raw.write_text(raw_body)
+    cnr.write_text(cnr_body)
+    return run("qc", "--sample-id", sample, "--raw-sex", raw, "--cnr-sex", cnr, "--lims-sex", "U",
+               "--override-sex", "U", "--applied-source", "cnvkit_inference", "--par-fix-applied", "0",
+               "--par-span-segments", "0", "--dropout-probes", "0", "--out", tmp_path / "s")
+
+
+@pytest.mark.parametrize("table", ["raw", "cnr"])
+@pytest.mark.parametrize("body, message", MALFORMED)
+def test_qc_rejects_malformed_table(tmp_path, table, body, message):
+    # malformed input must fail, not read as "no chrY" / female and pass the QC
+    good = {"raw": HDR + f"{U}.targetcoverage.cnn\tMale\t-0.97\t-1.13\n", "cnr": HDR + f"{U}.cnr\tMale\t-0.94\tnan\n"}
+    f = f"{U}.targetcoverage.cnn" if table == "raw" else f"{U}.cnr"
+    good[table] = "" if body is None else HDR + body.format(f=f)
+    p = qc_tables(tmp_path, U, good["raw"], good["cnr"])
+    assert p.returncode == 2
+    assert message in p.stderr and "ERROR" in p.stderr
+    assert not (tmp_path / "s.sex_qc.tsv").exists() and not (tmp_path / "s.sex_check_mqc.tsv").exists()
+
+
+@pytest.mark.parametrize("table", ["raw", "cnr"])
+def test_qc_rejects_missing_column(tmp_path, table):
+    good = {"raw": HDR + f"{U}.targetcoverage.cnn\tMale\t-0.97\t-1.13\n", "cnr": HDR + f"{U}.cnr\tMale\t-0.94\tnan\n"}
+    good[table] = good[table].replace("\tY_logratio", "").rsplit("\t", 1)[0] + "\n"
+    p = qc_tables(tmp_path, U, good["raw"], good["cnr"])
+    assert p.returncode == 2 and "missing column(s) Y_logratio" in p.stderr
+
+
+def test_qc_cnr_nan_x_is_accepted(tmp_path):
+    # CNVkit's literal nan is a supported value in either log-ratio column (policy: no usable bins)
+    p = qc_tables(tmp_path, U, HDR + f"{U}.targetcoverage.cnn\tFemale\t-0.97\tnan\n", HDR + f"{U}.cnr\tFemale\tnan\tnan\n")
+    assert p.returncode == 0, p.stderr
+    r = row(tmp_path / "s.sex_qc.tsv")
+    assert (r["raw_Y_logratio"], r["chrY_present"], r["chrY_sex"], r["cnr_X_logratio"]) == ("nan", "0", "Female", "nan")
+
+
+# ── sample IDs are matched whole (A3) ────────────────────────────────────────
+
+@pytest.mark.parametrize("sample", ["patient__01", "a__b__c", "sample.cnr", "sample.cnn", "x.targetcoverage.cnn",
+                                    "__lead", U])
+@pytest.mark.parametrize("prefix", ["", "0797_V2__"])
+def test_qc_matches_whole_sample_id(tmp_path, sample, prefix):
+    p = qc_tables(tmp_path, sample, HDR + f"{prefix}{sample}.targetcoverage.cnn\tMale\t-0.97\t-1.13\n",
+                  HDR + f"{prefix}{sample}.cnr\tMale\t-0.94\tnan\n")
+    assert p.returncode == 0, p.stderr
+    assert row(tmp_path / "s.sex_qc.tsv")["sample"] == sample
+
+
+@pytest.mark.parametrize("sample, raw_file, cnr_file", [
+    ("patient__01", "01.targetcoverage.cnn", "patient__01.cnr"),             # a prefix is not stripped from the ID
+    ("patient__01", "patient__01.targetcoverage.cnn", "01.cnr"),
+    ("sample.cnr", "sample.targetcoverage.cnn", "sample.cnr"),              # the suffix is not stripped twice
+    ("s", "s.cnr", "s.cnr"),                                                # raw table must name the coverage
+    ("s", "s.targetcoverage.cnn", "s.targetcoverage.cnn"),                  # .cnr table must name the .cnr
+    ("s", "s.cnn", "s.cnr"),
+    ("s", "__s.targetcoverage.cnn", "s.cnr"),                               # empty run prefix
+    ("s", "xs.targetcoverage.cnn", "s.cnr"),
+])
+def test_qc_rejects_other_sample_file(tmp_path, sample, raw_file, cnr_file):
+    p = qc_tables(tmp_path, sample, HDR + f"{raw_file}\tMale\t-0.97\t-1.13\n", HDR + f"{cnr_file}\tMale\t-0.94\tnan\n")
+    assert p.returncode == 2 and "is not" in p.stderr
 
 
 # ── differential against sex_check.py ───────────────────────────────────────
