@@ -121,7 +121,8 @@ def test_only_weight_changes(tmp_path):
     cnr, out, _, _ = run_mask(tmp_path, bins([0.1, -9, 0.2, -12, -15, 0.3]))
     before, after = cnr.read_text().splitlines(), out.read_text().splitlines()
     assert before[0] == after[0]
-    for i, (a, b) in enumerate(zip(before[1:], after[1:])):
+    assert len(before) == len(after) == 7
+    for i, (a, b) in enumerate(zip(before[1:], after[1:], strict=True)):
         a, b = a.split("\t"), b.split("\t")
         assert a[:6] == b[:6]
         assert b[6] == ("0" if i in (1, 3, 4) else a[6])
