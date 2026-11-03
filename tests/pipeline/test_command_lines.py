@@ -553,6 +553,24 @@ def test_plot_failure_is_not_fatal(tmp_path, failing, missing):
     assert set(run.outputs) == set(ALL_OUTPUTS) - {missing}
 
 
+@pytest.mark.parametrize("failing, missing", [("scatter", "scatter_png"), ("diagram", "diagram_pdf")])
+def test_partial_plot_is_not_published(tmp_path, failing, missing):
+    # A4: a plot command that writes part of its file and then fails: the partial file is removed, not uploaded
+    run = run_app(tmp_path, stub_env={"STUB_FAIL_PARTIAL": failing})
+    assert run.returncode == 0, run.stderr
+    assert f"[{failing}] WARNING" in run.stdout
+    assert not (run.workdir / ALL_OUTPUTS[missing]).exists()
+    assert ALL_OUTPUTS[missing] not in run.uploads
+    assert set(run.outputs) == set(ALL_OUTPUTS) - {missing}
+
+
+def test_both_partial_plots_are_not_published(tmp_path):
+    run = run_app(tmp_path, stub_env={"STUB_FAIL_PARTIAL": "scatter,diagram"})
+    assert run.returncode == 0, run.stderr
+    assert set(run.outputs) == set(ALL_OUTPUTS) - {"scatter_png", "diagram_pdf"}
+    assert not any(u.endswith((".png", ".pdf")) for u in run.uploads)
+
+
 @pytest.mark.parametrize("failing", ["coverage", "fix", "segment", "sex", "call", "genemetrics"])
 def test_analysis_failure_is_fatal(tmp_path, failing):
     run = run_app(tmp_path, fail=(failing,))

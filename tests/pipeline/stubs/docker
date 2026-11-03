@@ -8,6 +8,7 @@ mounted at the container working directory, so the app's later steps find their 
 Environment:
   STUB_LOG   directory for the call log
   STUB_FAIL  comma-separated CNVkit subcommands that exit 1 (failure injection)
+  STUB_FAIL_PARTIAL  comma-separated CNVkit subcommands that write a partial output file, then exit 1
   STUB_RAW_SEX, STUB_RAW_Y   `cnvkit.py sex` on a .targetcoverage.cnn: sex call and Y log-ratio (Male, -1.13)
   STUB_CNR_SEX               `cnvkit.py sex` on a .cnr: sex call (Male)
   STUB_RAW_SEX_ROW, STUB_CNR_SEX_ROW  the whole data row of that table instead ({sample} = the input file name)
@@ -78,6 +79,12 @@ out = None
 for flag in ("-o", "--output"):
     if flag in cmd:
         out = cmd[cmd.index(flag) + 1]
+if sub in os.environ.get("STUB_FAIL_PARTIAL", "").split(","):
+    if out:
+        with open(os.path.join(host, out), "w") as fh:
+            fh.write("partial output\n")
+    print(f"stub failure injected for cnvkit.py {sub} after a partial write", file=sys.stderr)
+    sys.exit(1)
 override = (os.environ.get(f"STUB_OUTPUT_{sub.upper()}_{os.path.basename(host).upper()}")
             or os.environ.get(f"STUB_OUTPUT_{sub.upper()}"))
 if out and override:

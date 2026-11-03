@@ -23,7 +23,7 @@
 #   outputs (files in the current directory)
 #     <SAMPLE_ID>.targetcoverage.cnn .cnr .cns .call.cns .genemetrics.tsv .genemetrics.noparfix.tsv
 #     .dropout_qc.tsv .sex_raw.tsv .sex_cnr.tsv .sex_qc.tsv .sex_check_mqc.tsv, and .scatter.png / .diagram.pdf
-#     when the (non-fatal) plots succeed
+#     when the (non-fatal) plots succeed (a plot whose command fails is removed, even if partly written)
 #   outputs (shell variables)  N_SEGS, N_GENES, SEX_ARG, SEX_SOURCE, LIMS_SEX, DECLARED_SEX, DROPOUT_PROBES,
 #                              PAR_FIX_APPLIED, PAR_SPAN_SEGMENTS
 
@@ -165,8 +165,10 @@ run_pipeline() {
         --y-min -3 --y-max 3 \
         --fig-size 14 4 \
         --title "${s}" \
-        -o "${s}.scatter.png" 2>/tmp/scatter_err.txt || \
-    echo "[scatter] WARNING: scatter plot failed (non-fatal): $(tail -1 /tmp/scatter_err.txt)"
+        -o "${s}.scatter.png" 2>/tmp/scatter_err.txt || {
+        rm -f "${s}.scatter.png"   # a partial plot is not published
+        echo "[scatter] WARNING: scatter plot failed (non-fatal): $(tail -1 /tmp/scatter_err.txt)"
+    }
 
     # ── Diagram plot (chromosome ideogram with gene labels; non-fatal) ────────
     # -x corrects the chrX/Y baseline, as in call and genemetrics, so the plot matches the calls.
@@ -179,8 +181,10 @@ run_pipeline() {
         "${px[@]}" \
         "${x[@]}" \
         --title "${s}" \
-        -o "${s}.diagram.pdf" 2>/tmp/diagram_err.txt || \
-    echo "[diagram] WARNING: diagram failed (non-fatal): $(tail -1 /tmp/diagram_err.txt)"
+        -o "${s}.diagram.pdf" 2>/tmp/diagram_err.txt || {
+        rm -f "${s}.diagram.pdf"   # a partial plot is not published
+        echo "[diagram] WARNING: diagram failed (non-fatal): $(tail -1 /tmp/diagram_err.txt)"
+    }
 
     # ── Gene metrics ──────────────────────────────────────────────────────────
     echo "[genemetrics] Computing per-gene metrics..."
