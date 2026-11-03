@@ -120,8 +120,8 @@ the side-by-side review (DI-4121).
 | `sex_check_mqc` | `<s>.sex_check_mqc.tsv`: MultiQC custom content (`id: cnvkit_sex_check`) |
 | `dropout_qc` | `<s>.dropout_qc.tsv`: masked probes (`arm chromosome start end gene log2 raw_reads reason`); header only when none |
 | `target_coverage` | `<s>.targetcoverage.cnn`: raw on-target coverage (audit, PoN rebuilds) |
-| `scatter_png` | `<s>.scatter.png`: genome-wide scatter, y = ±3 (optional: plot failures are not fatal) |
-| `diagram_pdf` | `<s>.diagram.pdf`: chromosome ideogram with gene labels (optional) |
+| `scatter_png` | `<s>.scatter.png`: genome-wide scatter, y = ±3 (optional: plot failures are not fatal, and a partly written plot from a failed command is not uploaded) |
+| `diagram_pdf` | `<s>.diagram.pdf`: chromosome ideogram with gene labels (optional, as `scatter_png`) |
 
 Within `<s>.sex_qc.tsv`, **`sex_mismatch`** is 1 when the declared sex (override, else LIMS) disagrees with chrY
 presence in the raw coverage: review the sample (possible sample swap, or a sex-chromosome variant). `NA` when the LIMS
@@ -175,18 +175,55 @@ All samples can run in parallel (one job per sample).
 
 ## Testing
 
+Prerequisites:
+
+- Python 3.12 and `uv`, installed into the venv below (no system `uv` needed).
+- ShellCheck for L0. Without it the shellcheck tests are **skipped** locally (CI installs a pinned version and fails
+  if it is missing).
+- For L3/L4: Docker, with the pinned image loaded as `cgp-cnvkit:1.0.0`
+  (`dx download project-Fkb6Gkj433GVVvj73J7x8KbV:file-J8j7Vyj45FG1BbK26JQgQY6q -o cnvkit-image.tar.gz &&
+  docker load < cnvkit-image.tar.gz`), and the validation data.
+- To fetch the data, for the BAM start and for the DNAnexus validation runs (`tests/dx/validation_jobs.py`): `dx login`
+  with access to `project-JF3p1f04Yggp0vf3PYjy7Q0F`.
+
 ```bash
-python3 -m venv .venv && uv pip install --python .venv/bin/python -r requirements-test.txt
-.venv/bin/python -m pytest -m "static or unit or pipeline"     # L0–L2: no Docker, data or DNAnexus (CI)
-tests/validation/fetch_validation_data.py all                  # ~3 GB, pinned by file ID and sha256
-.venv/bin/python -m pytest -m validation                       # L3 + L4: needs Docker and cgp-cnvkit:1.0.0
-tests/harness/run_local.py --data nonumi --start-from bam --samples 25328S0023   # BAM start (4.8 GB)
+python3 -m venv .venv && .venv/bin/python -m pip install uv
+.venv/bin/uv pip install --python .venv/bin/python -r requirements-test.txt   # hash-pinned
+.venv/bin/python -m pytest -m "static or unit or pipeline" -rs # L0–L2: no Docker, data or DNAnexus (CI)
+.venv/bin/python tests/validation/fetch_validation_data.py all # ~3 GB, pinned by file ID and sha256
+.venv/bin/python -m pytest -m validation -rs                   # L3 + L4: needs Docker and cgp-cnvkit:1.0.0
+.venv/bin/python tests/harness/run_local.py --data nonumi --start-from bam --samples 25328S0023   # BAM start (4.8 GB)
 ```
+
+Tests whose prerequisite is absent (Docker or the image, the validation data, ShellCheck) are **skipped, not
+failed**, and pytest still exits 0. Read the `-rs` skip summary, and do not take a run as a pass unless the layers you
+need ran with no skips (L3 + L4: 13 tests).
 
 | Layer | What it proves |
 |---|---|
-| L0 static | shellcheck; `dxapp.json` inputs read and outputs produced |
-| L1 unit | The three resource scripts on synthetic data, including byte-identity with the pinned originals |
-| L2 pipeline | The exact CNVkit command lines for every input scenario, under PATH stubs for `dx` and `docker` |
-| L3 equivalence | The ports reproduce the validation byte for byte on all 226 sequencings, UMI-consensus and non-UMI |
-| L4 harness | The real image + `pipeline.sh` reproduce the four validation baselines on 16 sequencings |
+| L0 static | shellcheck; `dxapp.json` inputs read and outputs produced; the CI selection never calls `docker` |
+| L1 unit | The three resource scripts on synthetic data, including byte-identity with the pinned originals and the malformed-input failures |
+| L2 pipeline | The exact CNVkit command lines for every input scenario, and the failure paths, under PATH stubs for `dx` and `docker` |
+| L3 equivalence | Each port against the pinned original and the validation outputs on the 226 sequencings (UMI-consensus and non-UMI); what is compared differs per port (below) |
+| L4 harness | The real image + `pipeline.sh` reproduce the validation baselines on 16 sequencings, in four data × mask configurations |
+
+What L3 compares, per port:
+
+- `dropout_mask.py` (UMI and non-UMI, all 226): the masked `.cnr` and the QC table are byte-identical to the pinned
+  `deadprobe_mask.py mask M` and the QC table to the validated `mask_qc.tsv`. The masked-probe totals are 82 probes in
+  42 sequencings (UMI) and 78 in 41 (non-UMI), with the QC-failed library counted separately.
+- `cnvkit_parfix.py` (UMI A0, non-UMI A0 and non-UMI M): on all 226, the male decision and the `cnvkit.py sex` call
+  equal the validation log, and `genemetrics` re-run on the unmodified inputs reproduces the original read-out byte for
+  byte. The byte comparison of the post-step `genemetrics.tsv` with the validated one, and the `par_check` comparison,
+  apply to the **60 treated males** in each set.
+- `cnvkit_sex_qc.py` (UMI and non-UMI, all 226): `cnvkit.py sex` is re-run on the coverage and the `.cnr`. The pinned
+  `sex_check.py` on those tables reproduces the validated UMI `sex_qc.tsv` byte for byte. On non-UMI, the raw-coverage
+  calls equal the DI-4118 tier 1 tables. The port is then compared with `sex_check.py` **field by field**, not byte for
+  byte. Every `sex_check.py` column must match except two deliberate differences (D8): `applied_source` is renamed
+  (`LIMS` → `sample_name`, `CNVkit inference (.cnr)` → `cnvkit_inference`), and `applied_sex` for inferred samples
+  names the call (`cnvkit_inferred(Male)`). The port's added columns (`par_fix_applied`, `par_span_segments`,
+  `dropout_probes`) and its MultiQC table are not compared in L3; L1 checks them. `sex_mismatch` is 0 for all 173
+  LIMS M/F sequencings.
+- L4 compares `.cnr`, `.cns`, `.call.cns`, `genemetrics(.noparfix).tsv`, `dropout_qc.tsv` and the sex QC fields with
+  the baselines. In the UMI mask-on configuration, a treated male with a masked probe has no UMI post-step baseline,
+  so its `genemetrics.tsv` is reported as `n/a` (one check); the non-UMI N-M run covers that path.

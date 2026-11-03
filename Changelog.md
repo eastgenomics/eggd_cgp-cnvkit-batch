@@ -22,11 +22,20 @@ Runs the validated Atlas CGP configuration (`D_gcclip_on_s2` with the dropout ma
 - `dropout_mask` input (default `true`; `false` = the validated configuration without the mask, arm A0) and `dropout_mask.py`, a port of `deadprobe_mask.py mask M` @ `ddad79b`
   (DI-4139)
 - `cnvkit.py sex` on the raw coverage and on the `.cnr` (DI-4102)
-- PAR post-step, `cnvkit_parfix.py` (port of `genemetrics_parfix.py` @ `f933f7a`) (DI-4101)
-- Sex QC, `cnvkit_sex_qc.py` (port of `sex_check.py` @ `31a62fc`) (DI-4103)
+- PAR post-step, `cnvkit_parfix.py` (port of `genemetrics_parfix.py` @ `f933f7a`) (DI-4101). The job fails, with
+  no outputs, on an unexplained PAR discrepancy (`par_check=0`), which the validation only logged. A boundary-spanning
+  segment excuses only the PAR gene inside it, logged as `span_genes`
+- Sex QC, `cnvkit_sex_qc.py` (port of `sex_check.py` @ `31a62fc`) (DI-4103). A malformed `cnvkit.py sex` table (a
+  missing column or value, a non-numeric log-ratio other than CNVkit's `nan`, a sex call other than Male/Female) fails
+  the job. Before this change it could read as female or as no chrY, or skip the PAR post-step. The table's sample is
+  matched against the whole `sample_id`, so IDs containing `__` or ending in `.cnr`/`.cnn` are accepted
 - Outputs `genemetrics_noparfix`, `sex_qc`, `sex_check_mqc`, `dropout_qc`, `target_coverage` (DI-4104)
 - Tests: static checks, unit tests, command-line contract tests (CI), equivalence tests against the validation on
   226 sequencings and a local harness with the real image
+
+### Fixed
+- A scatter or diagram command that fails after partly writing its file no longer has the partial file uploaded as
+  `scatter_png` / `diagram_pdf` (the failure stays non-fatal)
 
 ### Deprecated
 - `purity`, `ploidy`: ignored with a warning; the `ploidy` default of 2 is removed (DI-4121)
