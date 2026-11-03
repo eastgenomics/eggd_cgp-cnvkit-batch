@@ -97,7 +97,7 @@ def check_sex_row(path, header, row):
         raise ValueError(f'{path}: missing column(s) {", ".join(missing)} (columns: {", ".join(header)})')
     if len(row) != len(header):
         raise ValueError(f'{path}: the sample row has {len(row)} fields, the header {len(header)}')
-    r = dict(zip(header, row))
+    r = dict(zip(header, row, strict=True))
     if r['sex'] not in SEX_VALUES:
         raise ValueError(f"{path}: sex {r['sex']!r} is not one of {', '.join(SEX_VALUES)}")
     for c in ('X_logratio', 'Y_logratio'):
