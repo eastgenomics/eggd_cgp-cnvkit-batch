@@ -263,6 +263,40 @@ def test_parfix_non_par_difference_fails_the_job(tmp_path):
     assert run.outputs == {}
 
 
+def test_parfix_unexplained_par_discrepancy_fails_the_job(tmp_path):
+    # CRLF2 still carries the +1 after the fix and no segment spans a PAR boundary: par_check 0 is fatal (A1)
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2.replace("1.26805", "1.3")))
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "FAILED: par_check 0" in run.stderr and "CRLF2@chrX:1190891-1212654" in run.stderr
+    assert run.outputs == {} and run.uploads == []
+
+
+def test_parfix_span_elsewhere_does_not_excuse_a_par_row(tmp_path):
+    # a segment spans the PAR2 boundary, but CRLF2's segment lies wholly in PAR1 and its row is unchanged (+1 kept)
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2))
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                                "chrX\t1190891\t2781479\tCRLF2\t0.26805\t2\t679\t8\t7.2\n"
+                                                "chrX\t155000000\t155800000\tP2\t-0.1\t2\t500\t8\t7.2\n")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "FAILED: par_check 0" in run.stderr
+    assert run.outputs == {}
+
+
+def test_parfix_span_names_the_gene_and_segment(tmp_path):
+    # CRLF2's own segment continues into non-PAR chrX: the documented span limitation, not a failure
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2))
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                                "chrX\t1190891\t9000000\tCRLF2\t-0.9\t1\t679\t8\t7.2\n")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode == 0, run.stderr
+    assert "span_genes=CRLF2@chrX:1190891-9000000 par_check=span" in run.stdout
+    assert "[parfix] WARNING: 1 call.cns segment(s) span a PAR boundary" in run.stdout
+    assert sex_qc_row(run, S)["par_span_segments"] == "1"
+    assert set(run.outputs) == set(ALL_OUTPUTS)
+
+
 # ── DI-4103: sex QC (D8) ─────────────────────────────────────────────────────
 
 def sex_qc_row(run, sample):

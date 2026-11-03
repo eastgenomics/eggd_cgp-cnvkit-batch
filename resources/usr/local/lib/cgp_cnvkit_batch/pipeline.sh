@@ -200,7 +200,7 @@ run_pipeline() {
     PAR_SPAN_SEGMENTS=0
     if [ "${PAR_FIX_APPLIED}" = "1" ]; then
         local shifted
-        shifted=$(cnvkit_parfix.py shift "${s}.cnr" "${s}.call.cns" parfix)
+        shifted=$(cnvkit_parfix.py shift "${s}.cnr" "${s}.call.cns" parfix) || return 1
         echo "[parfix] post-step applied ($(cut -f2 <<< "${decision}")): ${shifted}"
         PAR_SPAN_SEGMENTS=$(sed -n 's/.*span_segs=\([0-9]*\).*/\1/p' <<< "${shifted}")
         if [ "${PAR_SPAN_SEGMENTS}" -gt 0 ]; then
@@ -208,10 +208,11 @@ run_pipeline() {
             echo "[parfix] WARNING: keep the +1 shift (known limitation): review male CRLF2 calls."
         fi
         (cd parfix && run_cnvkit genemetrics "${s}.cnr" -s "${s}.call.cns" "${gm_args[@]}" -o "${s}.genemetrics.tsv")
-        # assigned first, so a failed check (non-PAR rows differ) stops the job under set -e
+        # a failed check (non-PAR rows differ, or an unexplained PAR discrepancy: par_check 0) stops the job, so
+        # no output is uploaded
         local checked
         checked=$(cnvkit_parfix.py compare "${s}.genemetrics.noparfix.tsv" "parfix/${s}.genemetrics.tsv" \
-            "${s}.call.cns")
+            "${s}.call.cns") || return 1
         echo "[parfix] ${checked}"
         cp -f "parfix/${s}.genemetrics.tsv" "${s}.genemetrics.tsv"
     else

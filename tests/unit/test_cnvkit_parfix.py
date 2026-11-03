@@ -200,6 +200,43 @@ def test_compare_span(tmp_path):
     assert rec["par_check"] == "span" and rec["file_changed"] == 0
 
 
+def test_compare_span_names_the_gene_and_segment(tmp_path):
+    cns = call_cns(tmp_path, "1.26805", start=1190891, end=9000000)
+    rec = port.compare(gm(tmp_path, "o", NONPAR, CRLF2_ORIG), gm(tmp_path, "n", NONPAR, CRLF2_ORIG), cns)
+    assert rec["span_genes"] == "CRLF2@chrX:1190891-9000000" and "unexplained" not in rec
+    proc = run("compare", tmp_path / "o", tmp_path / "n", cns)
+    assert proc.returncode == 0, proc.stderr
+    assert "span_genes=CRLF2@chrX:1190891-9000000" in proc.stdout and proc.stdout.strip().endswith("par_check=span")
+
+
+def test_compare_unexplained_par_row_fails(tmp_path):
+    # no spanning segment; CRLF2 is still at +1 after the fix (1.268 != segment 0.268): par_check 0 stops the job
+    o, n = gm(tmp_path, "o", NONPAR, CRLF2_ORIG), gm(tmp_path, "n", NONPAR, CRLF2_ORIG.replace("1.26805", "1.3"))
+    assert port.compare(o, n, call_cns(tmp_path))["par_check"] == 0
+    proc = run("compare", o, n, call_cns(tmp_path))
+    assert proc.returncode == 1
+    assert "FAILED: par_check 0" in proc.stderr and "par_check=0" in proc.stderr
+    assert proc.stdout == ""
+
+
+def test_compare_span_elsewhere_does_not_explain_a_par_row(tmp_path):
+    # a segment spans the PAR2 boundary, but CRLF2's own segment lies wholly inside PAR1 and still carries the +1
+    # after the fix: the reference calls this 'span' (any spanning segment + unchanged PAR rows); the port does not
+    cns = tmp_path / "s.call.cns"
+    cns.write_text(CNS_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                           "chrX\t1190891\t2781479\tCRLF2\t0.26805\t2\t679\t8\t7.2\n"
+                           "chrX\t155000000\t155800000\tPAR2SPAN\t-0.1\t2\t500\t8\t7.2\n")
+    o, n = gm(tmp_path, "o", NONPAR, CRLF2_ORIG), gm(tmp_path, "n", NONPAR, CRLF2_ORIG)
+    rec = port.compare(o, n, cns)
+    assert rec["span_segs"] == 1 and rec["par_check"] == 0
+    assert rec["unexplained"] == "CRLF2@chrX:1190891-1212654"
+    (tmp_path / "s.cnr").write_text(CNR_H)
+    assert ref.compare(dict(action="dry", rundir=str(tmp_path), sample="s", orig=str(o), new=str(n)))["par_check"] \
+        == "span"
+    proc = run("compare", o, n, cns)
+    assert proc.returncode == 1 and "CRLF2@chrX:1190891-1212654" in proc.stderr
+
+
 def test_compare_cli_output(tmp_path):
     proc = run("compare", gm(tmp_path, "o", NONPAR, CRLF2_ORIG), gm(tmp_path, "n", NONPAR), call_cns(tmp_path))
     assert proc.returncode == 0, proc.stderr
@@ -243,5 +280,7 @@ def test_compare_matches_reference(tmp_path, case):
     (tmp_path / "s.cnr").write_text(CNR_H)
     mine = port.compare(orig, new, cns)
     theirs = ref.compare(dict(action="dry", rundir=str(tmp_path), sample="s", orig=str(orig), new=str(new)))
+    assert set(mine) - set(theirs) == ({"span_genes"} if case == "span" else set())   # port addition (A1)
     for k, v in mine.items():
-        assert theirs[k] == v, k
+        if k != "span_genes":
+            assert theirs[k] == v, k
