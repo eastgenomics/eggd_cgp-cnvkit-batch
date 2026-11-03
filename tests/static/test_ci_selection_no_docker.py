@@ -4,7 +4,6 @@ A recording `docker` that always fails is put first on PATH. Docker availability
 `docker`-marked test is set up (tests/conftest.py), so neither collection nor the L0–L2 selection may call it.
 """
 import os
-import subprocess
 import sys
 
 import pytest
