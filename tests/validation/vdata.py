@@ -16,7 +16,7 @@ QC_FAILED = "25330S0104"     # the failed 0.5x library, reported separately in t
 
 def require(path):
     if not path.exists():
-        pytest.skip(f"validation data absent: {path} (run tests/validation/fetch_validation_data.py)")
+        pytest.skip(f"validation data absent: {path} (fetch it: python3 tests/validation/fetch_validation_data.py all)")
     return path
 
 

@@ -17,7 +17,7 @@ Layout written (<run> = 0734_Val1_50kb | 0786_V1 | 0797_V2 | 0811_V3, <s> = samp
   pon/atlas_cnvkit_static_pon_cgp_hg38_v1.0.0.cnn the controlled static PoN
   manifest/{11_final_per_sample_files.csv,03_pon_samples.csv,nonumi_inventory.tsv}
 
-Usage: fetch_validation_data.py [umi|nonumi|all]
+Usage: python3 tests/validation/fetch_validation_data.py [umi|nonumi|all]   (needs `dx login`)
 """
 import hashlib
 import os
