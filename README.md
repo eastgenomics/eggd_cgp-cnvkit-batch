@@ -6,9 +6,13 @@ Atlas CGP (`D_gcclip_on_s2` with the dropout mask; Confluence DV `4837998596` an
 production (UMI-masked, non-UMI) data with the controlled static PoN.
 
 ```
-eggd_cgp-cnvkit-coverage  →  eggd_cgp-cnvkit-batch (×N, parallel)
-                                 ↑ cn_reference: the static PoN, built once by eggd_cgp-cnvkit-pon
+PoN build (once):  normal/PoN BAMs → eggd_cgp-cnvkit-coverage (per specimen) → eggd_cgp-cnvkit-pon → static PoN (.cnn)
+
+Per sample:        tumour BAM + BAI, panel BED ─┐
+                   static PoN (cn_reference) ───┴→ eggd_cgp-cnvkit-batch (×N, parallel)
 ```
+
+The batch app computes its own coverage from the BAM; the coverage app only supplies the PoN build.
 
 For Atlas the PoN is the controlled file `atlas_cnvkit_static_pon_cgp_hg38_v1.0.0.cnn` (Confluence DV `4854120471`;
 md5 `b4a373729d9282ce0a0ed80fd29f6d0a`), built from 124 FFPE specimens with GC clipping and
