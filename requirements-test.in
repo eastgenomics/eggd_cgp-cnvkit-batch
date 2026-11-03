@@ -1,0 +1,4 @@
+# Test dependencies only: the app's bundled scripts are standard-library Python.
+# requirements-test.txt is compiled from this file with hashes:
+#   uv pip compile --python-version 3.12 --generate-hashes requirements-test.in -o requirements-test.txt
+pytest==8.4.2
