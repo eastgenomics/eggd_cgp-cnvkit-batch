@@ -6,7 +6,7 @@ Atlas CGP (`D_gcclip_on_s2` with the dropout mask; Confluence DV `4837998596` an
 production (UMI-masked, non-UMI) data with the controlled static PoN.
 
 ```
-PoN build (once):  normal/PoN BAMs → eggd_cgp-cnvkit-coverage (per specimen) → eggd_cgp-cnvkit-pon → static PoN (.cnn)
+PoN build (once):  PoN specimen BAMs → eggd_cgp-cnvkit-coverage (per specimen) → eggd_cgp-cnvkit-pon → static PoN (.cnn)
 
 Per sample:        tumour BAM + BAI, panel BED ─┐
                    static PoN (cn_reference) ───┴→ eggd_cgp-cnvkit-batch (×N, parallel)
@@ -69,8 +69,9 @@ A sample is treated as male when it gets `-x male`, or no `-x` and `cnvkit.py se
 correct the PAR issue, `cnvkit_parfix.py` subtracts 1.0 from the bins and segments **wholly inside** GRCh38 PAR1
 `[10000, 2781479)` and PAR2 `[155701382, 156030895)` in copies under `parfix/`, `genemetrics` is re-run there with the
 original arguments, and every non-PAR row must be byte-identical to the original. Every PAR gene row must then equal
-its `call.cns` segment log2 (`par_check=1`), or lie in a segment that spans a PAR boundary and was therefore left
-unchanged (`par_check=span`; the gene and segment are logged as `span_genes`). Anything else is an unexplained PAR
+its `call.cns` segment log2 (`par_check=1`). If the post-step leaves the PAR rows unchanged, a row may instead lie
+in a segment that spans a PAR boundary, which is not shifted (`par_check=span`; the gene and segment are logged as
+`span_genes`). Anything else is an unexplained PAR
 discrepancy (`par_check=0`). The job fails, with no outputs, when non-PAR rows differ or `par_check` is 0. The
 corrected read-out is `genemetrics`; the uncorrected one is always written as `genemetrics_noparfix`. Without
 `diploid_parx_genome` no post-step runs.
