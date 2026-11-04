@@ -1,0 +1,4 @@
+# The uv that installs the hashed test requirements in CI, itself installed by hash:
+#   uv pip compile --python-version 3.12 --generate-hashes requirements-bootstrap.in -o requirements-bootstrap.txt
+#   python -m pip install --require-hashes --no-deps --only-binary :all: -r requirements-bootstrap.txt
+uv==0.11.3

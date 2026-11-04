@@ -27,11 +27,12 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install shellcheck and test dependencies
-        # shellcheck: the Ubuntu 24.04 archive package (apt verifies its signature), pinned to one version;
-        # uv pinned; the test requirements are installed by hash (requirements-test.txt is compiled with hashes)
+        # shellcheck: the Ubuntu 24.04 archive package (apt verifies its signature), pinned to one version.
+        # uv: version and artifact hashes pinned in requirements-bootstrap.txt, verified by pip --require-hashes;
+        # it then installs the test requirements by hash (requirements-test.txt is compiled with hashes).
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck=0.9.0-1
-          python -m pip install uv==0.11.3
+          python -m pip install --require-hashes --no-deps --only-binary :all: -r requirements-bootstrap.txt
           uv pip install --system --require-hashes -r requirements-test.txt
       - name: Validate dxapp.json
         run: python -m json.tool dxapp.json > /dev/null
