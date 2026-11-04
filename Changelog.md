@@ -23,15 +23,31 @@ Runs the validated Atlas CGP configuration (`D_gcclip_on_s2` with the dropout ma
   (DI-4139)
 - `cnvkit.py sex` on the raw coverage and on the `.cnr` (DI-4102)
 - PAR post-step, `cnvkit_parfix.py` (port of `genemetrics_parfix.py` @ `f933f7a`) (DI-4101). The job fails, with
-  no outputs, on an unexplained PAR discrepancy (`par_check=0`), which the validation only logged. A boundary-spanning
-  segment excuses only the PAR gene inside it, logged as `span_genes`
+  no outputs, on an unexplained PAR discrepancy (`par_check=0`), which the validation only logged. Each PAR row is
+  judged against its own `call.cns` segment, so spanned and corrected genes can mix: a row of a segment wholly inside
+  a PAR (shifted) must equal the segment log2 after the fix and log2 + 1.0 before it, and a missing row is excused
+  only below the 0.3 threshold or by the row with the same gene and coordinates, changed in log2 alone; a row of a
+  boundary-spanning segment (not shifted) must be unchanged and equal the segment log2 + 1.0, and is logged as
+  `span_genes`. A row before the fix must be at a level `genemetrics` reports (magnitude ≥ 0.3). Values are compared
+  within CNVkit's printed precision (6 significant digits) at their magnitude. Where segments overlap (overlapping
+  targets), a row is explained when any segment it overlaps explains it, as `genemetrics` reports a gene once per
+  segment. `compare` reads the two genemetrics tables with only the checks it needs (identical headers starting
+  `gene chromosome start end log2`, CNVkit's header-only empty table aside; one field per column; integer
+  coordinates; a numeric log2), so an empty or truncated table fails the job
 - Sex QC, `cnvkit_sex_qc.py` (port of `sex_check.py` @ `31a62fc`) (DI-4103). A malformed `cnvkit.py sex` table (a
-  missing column or value, a non-numeric log-ratio other than CNVkit's `nan`, a sex call other than Male/Female) fails
-  the job. Before this change it could read as female or as no chrY, or skip the PAR post-step. The table's sample is
-  matched against the whole `sample_id`, so IDs containing `__` or ending in `.cnr`/`.cnn` are accepted
+  missing or duplicated column, a missing value, a log-ratio that is not a finite number or one of CNVkit's literals
+  `nan` and, with an `Unknown` call, `NA`; a sex call other than `Male`, `Female` or `Unknown`; a truncated table
+  whose last line has no newline) fails the job, in the sex QC and in the PAR decision. Before this change it could
+  read as female or as no chrY, or skip the PAR post-step. CNVkit's `Unknown NA NA` row (no usable chrX bins) is
+  accepted as before. The table's sample is matched against the whole `sample_id`, so IDs containing `__` or ending
+  in `.cnr`/`.cnn` are accepted
 - Outputs `genemetrics_noparfix`, `sex_qc`, `sex_check_mqc`, `dropout_qc`, `target_coverage` (DI-4104)
 - Tests: static checks, unit tests, command-line contract tests (CI), equivalence tests against the validation on
-  226 sequencings and a local harness with the real image
+  226 sequencings (each script through its command line, as `pipeline.sh` runs it; results keyed by run and sample)
+  and a local harness with the real image (which must compare all 16 local sequencings). Test helper commands are
+  bounded (process group killed on timeout, any unconfirmed cleanup reported without masking the original failure),
+  except the harness's BAM-start BAM/BAI transfers (deferred, issue #5). CI pins its actions, uv (installed by hash)
+  and ShellCheck, and installs the test requirements by hash
 
 ### Fixed
 - A scatter or diagram command that fails after partly writing its file no longer has the partial file uploaded as

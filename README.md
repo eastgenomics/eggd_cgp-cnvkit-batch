@@ -68,17 +68,33 @@ already have two copies and do not require correction, so PAR genes (on this pan
 A sample is treated as male when it gets `-x male`, or no `-x` and `cnvkit.py sex` on the `.cnr` reports Male. To
 correct the PAR issue, `cnvkit_parfix.py` subtracts 1.0 from the bins and segments **wholly inside** GRCh38 PAR1
 `[10000, 2781479)` and PAR2 `[155701382, 156030895)` in copies under `parfix/`, `genemetrics` is re-run there with the
-original arguments, and every non-PAR row must be byte-identical to the original. Every PAR gene row must then equal
-its `call.cns` segment log2 (`par_check=1`). If the post-step leaves the PAR rows unchanged, a row may instead lie
-in a segment that spans a PAR boundary, which is not shifted (`par_check=span`; the gene and segment are logged as
-`span_genes`). Anything else is an unexplained PAR
-discrepancy (`par_check=0`). The job fails, with no outputs, when non-PAR rows differ or `par_check` is 0. The
-corrected read-out is `genemetrics`; the uncorrected one is always written as `genemetrics_noparfix`. Without
-`diploid_parx_genome` no post-step runs.
+original arguments, and every non-PAR row must be byte-identical to the original. Each PAR gene row is then judged
+against its own `call.cns` segment. In a segment wholly inside a PAR (shifted), the row must equal the segment log2
+after the fix and the segment log2 + 1.0 before it, each at a level `genemetrics` reports (magnitude ≥ 0.3), so an
+original row below the threshold is never accepted (`par_check=1`); a row that disappears must have dropped below the
+0.3 threshold, or be replaced by the row with the same gene and coordinates that differs only in log2 (a same-name
+row elsewhere does not count). In a segment that spans a PAR boundary (not shifted), the row must be unchanged and
+equal the segment log2 + 1.0, the male shift, at magnitude ≥ 0.3 (`par_check=span`, also when other PAR genes were
+corrected; the gene and segment are logged as `span_genes`); a row there that equals the segment log2 is not
+accepted as corrected. Anything else is an unexplained PAR discrepancy (`par_check=0`). "Equal" allows for CNVkit
+printing every value to 6 significant digits (`%.6g`): the difference may be up to half a unit in the 6th digit at
+the value's magnitude (a segment at 9.99996 gives 10.99996 before the fix, printed as `11`). CNVkit writes
+overlapping segments for overlapping targets, and `genemetrics` reports a gene once for each segment that overlaps
+its bins, at that segment's log2; a PAR row is therefore explained when any segment it overlaps explains it (with
+non-overlapping segments, that is the one segment containing it). `compare` reads the two genemetrics tables with
+only the checks it needs to compare them: identical headers starting `gene chromosome start end log2` (CNVkit's
+header-only table, when no gene is reported, may stand on either side), one field per column, integer coordinates
+and a numeric log2; an empty or truncated table fails. The job fails, with no outputs, on such a table, when non-PAR
+rows differ or when `par_check` is 0. The corrected read-out is `genemetrics`; the uncorrected one is always written
+as `genemetrics_noparfix`. Without `diploid_parx_genome` no post-step runs.
 
-The `cnvkit.py sex` tables are checked before use: one row naming `<s>.targetcoverage.cnn` / `<s>.cnr`, every column
-present, a `Male` or `Female` call and numeric log-ratios. CNVkit's literal `nan` (no usable bins) is accepted, and a
-`nan` raw Y log-ratio means no chrY. Any other value fails the job instead of being read as female or as no chrY.
+The `cnvkit.py sex` tables are checked before use, by the sex QC and by the PAR decision: one row naming
+`<s>.targetcoverage.cnn` / `<s>.cnr`, every required column present once, a value for each, a sex call CNVkit writes
+(`Male`, `Female`, or `Unknown` when the sample has no usable chrX bins) and finite numeric log-ratios, and a newline
+at the end of the last line, as CNVkit writes it (a raw Y log-ratio `-5.01e-05` cut to `-5.01` would still be a
+number). CNVkit's literals for no value are accepted: `nan` (no usable bins on that chromosome; a `nan` raw Y
+log-ratio means no chrY) and `NA`, which it writes with `Unknown`; both read as no value, as before. Any other value
+fails the job instead of being read as female or as no chrY, or skipping the PAR post-step.
 
 ### Dropout mask
 
@@ -195,8 +211,9 @@ Prerequisites:
   with access to `project-JF3p1f04Yggp0vf3PYjy7Q0F`.
 
 ```bash
-python3 -m venv .venv && .venv/bin/python -m pip install uv
-.venv/bin/uv pip install --python .venv/bin/python -r requirements-test.txt   # hash-pinned
+python3 -m venv .venv && .venv/bin/python -m pip install --require-hashes --no-deps --only-binary :all: \
+    -r requirements-bootstrap.txt                              # uv, by artifact hash
+.venv/bin/uv pip install --python .venv/bin/python --require-hashes -r requirements-test.txt   # hash-pinned
 .venv/bin/python -m pytest -m "static or unit or pipeline" -rs # L0–L2: no Docker, data or DNAnexus (CI)
 .venv/bin/python tests/validation/fetch_validation_data.py all # ~3 GB, pinned by file ID and sha256
 .venv/bin/python -m pytest -m validation -rs                   # L3 + L4: needs Docker and cgp-cnvkit:1.0.0
@@ -205,33 +222,47 @@ python3 -m venv .venv && .venv/bin/python -m pip install uv
 
 Tests whose prerequisite is absent (Docker or the image, the validation data, ShellCheck) are **skipped, not
 failed**, and pytest still exits 0. Read the `-rs` skip summary, and do not take a run as a pass unless the layers you
-need ran with no skips (L3 + L4: 13 tests).
+need ran with no skips (L3 + L4: 14 tests). The one exception: a Docker check that timed out and could not confirm
+its own cleanup (a `docker` process may remain) fails the Docker tests instead of skipping them.
 
 | Layer | What it proves |
 |---|---|
-| L0 static | shellcheck; `dxapp.json` inputs read and outputs produced; the CI selection never calls `docker` |
-| L1 unit | The three resource scripts on synthetic data, including byte-identity with the pinned originals and the malformed-input failures |
+| L0 static | shellcheck; `dxapp.json` inputs read and outputs produced; the CI selection never calls `docker`; the resource scripts use no `assert` (`python -O` would remove it) |
+| L1 unit | The three resource scripts on synthetic data, including byte-identity with the pinned originals and the malformed-input failures; the test helper commands (`docker`, `dx`, `git`) are bounded, and on timeout the whole process group is killed, the original timeout raised with its output and any unconfirmed cleanup reported (a Docker check whose cleanup is unconfirmed fails rather than skips). Any exception during cleanup (invalid UTF-8 from Docker included, or from the L4 harness's group kill) is reported as unconfirmed cleanup, never in place of the original failure, and every named container is still removed; the L4 harness then keeps its `.cleanup-unconfirmed` marker and reports the timeout as a FAIL (exit 124). A pipe that fails to close after the kill is recorded on the original exception, but is not unconfirmed cleanup, so it alone does not fail a test that would pass or skip. A failing `dx` is first on `PATH` in the unit tests that mock it, so none can reach DNAnexus. One deferred exception: the L4 harness's `--start-from bam` BAM/BAI transfers and their `dx describe`/`dx find` calls have no timeout ([#5](https://github.com/eastgenomics/eggd_cgp-cnvkit-batch/issues/5)) |
 | L2 pipeline | The exact CNVkit command lines for every input scenario, and the failure paths, under PATH stubs for `dx` and `docker` |
 | L3 equivalence | Each port against the pinned original and the validation outputs on the 226 sequencings (UMI-consensus and non-UMI); what is compared differs per port (below) |
-| L4 harness | The real image + `pipeline.sh` reproduce the validation baselines on 16 sequencings, in four data × mask configurations |
+| L4 harness | The real image + `pipeline.sh` reproduce the validation baselines on 16 sequencings, in four data × mask configurations. The harness refuses an empty or incomplete sample list (exactly 16 sequencings, each sample ID once) and fails a sequencing with nothing compared, and each L4 test requires a PASS for all 16. The DNAnexus check (`tests/dx/validation_jobs.py check`) likewise refuses an empty or incomplete jobs file |
 
-What L3 compares, per port:
+What L3 compares, per port. Every script runs through its command line, in a directory of its own per sequencing,
+with `pipeline.sh`'s file names and arguments. Results are keyed by run and sample (the 226 sequencings have 150
+distinct sample IDs: replicates share one), and each comparison must cover all 226, each once.
 
-- `dropout_mask.py` (UMI and non-UMI, all 226): the masked `.cnr` and the QC table are byte-identical to the pinned
-  `deadprobe_mask.py mask M` and the QC table to the validated `mask_qc.tsv`. The masked-probe totals are 82 probes in
-  42 sequencings (UMI) and 78 in 41 (non-UMI), with the QC-failed library counted separately.
-- `cnvkit_parfix.py` (UMI A0, non-UMI A0 and non-UMI M): on all 226, the male decision and the `cnvkit.py sex` call
-  equal the validation log, and `genemetrics` re-run on the unmodified inputs reproduces the original read-out byte for
-  byte. The byte comparison of the post-step `genemetrics.tsv` with the validated one, and the `par_check` comparison,
-  apply to the **60 treated males** in each set.
-- `cnvkit_sex_qc.py` (UMI and non-UMI, all 226): `cnvkit.py sex` is re-run on the coverage and the `.cnr`. The pinned
-  `sex_check.py` on those tables reproduces the validated UMI `sex_qc.tsv` byte for byte. On non-UMI, the raw-coverage
-  calls equal the DI-4118 tier 1 tables. The port is then compared with `sex_check.py` **field by field**, not byte for
-  byte. Every `sex_check.py` column must match except two deliberate differences (D8): `applied_source` is renamed
-  (`LIMS` → `sample_name`, `CNVkit inference (.cnr)` → `cnvkit_inference`), and `applied_sex` for inferred samples
-  names the call (`cnvkit_inferred(Male)`). The port's added columns (`par_fix_applied`, `par_span_segments`,
-  `dropout_probes`) and its MultiQC table are not compared in L3; L1 checks them. `sex_mismatch` is 0 for all 173
-  LIMS M/F sequencings.
+- `dropout_mask.py` (UMI and non-UMI, all 226): `dropout_mask.py mask`; the masked `.cnr` and the QC table are
+  byte-identical to the pinned `deadprobe_mask.py mask M` and the QC table to the validated `mask_qc.tsv`, and the
+  printed count equals the QC table's rows. The masked-probe totals are 82 probes in 42 sequencings (UMI) and 78 in
+  41 (non-UMI), with the QC-failed library counted separately.
+- `cnvkit_parfix.py` (UMI A0, non-UMI A0 and non-UMI M; all 226 in each): per sequencing, `cnvkit.py sex` on the
+  `.cnr` and `genemetrics` on the unmodified inputs, then `decide`. The `cnvkit.py sex` call and the male decision
+  equal the validation log, and the re-run reproduces the original read-out byte for byte. For the **60 treated
+  males** in each set: `shift` (its counts equal the log), `genemetrics` in `parfix/` and `compare`; every `compare`
+  statistic equals the log, and the post-step `genemetrics.tsv` is byte-identical to the validated one. `shift` and
+  `compare` must print their full sets of statistics (and the log record each), so a missing statistic fails rather
+  than going uncompared. `par_check` is 1 / span for 51/9 (UMI A0), 50/10 (non-UMI A0) and 50/10 (non-UMI M), never
+  0; 4 span samples in each set have no PAR row. A further test, with no validation data, runs CNVkit's own
+  `genemetrics` in the image on a synthetic male with overlapping PAR1 bins and two overlapping segments: the
+  post-step completes with `par_check=1`, and where both segments contain the PAR row the output equals the base
+  (v2.1.0 before the review fixes, whose `compare` is the pinned original's) byte for byte.
+- `cnvkit_sex_qc.py` (UMI and non-UMI, all 226): per sequencing, `cnvkit.py sex` on the coverage and on the `.cnr`
+  (arm A0), then `resolve`, `decide` / `shift` (for `par_fix_applied` and `par_span_segments`) and `qc`. The pinned
+  `sex_check.py`, on run-prefixed tables built from those per-sample tables, reproduces the validated UMI
+  `sex_qc.tsv` byte for byte. On non-UMI, the raw-coverage calls equal the DI-4118 tier 1 tables. The port is then
+  compared with `sex_check.py` **field by field**, not byte for byte. Every `sex_check.py` column must match except
+  three deliberate differences: `applied_source` is renamed (`LIMS` → `sample_name`, `CNVkit inference (.cnr)` →
+  `cnvkit_inference`), `applied_sex` for inferred samples names the call (`cnvkit_inferred(Male)`) (D8), and `run` is
+  empty, as `pipeline.sh` passes no `--run`. The port's table must have every `sex_check.py` column and its added
+  columns, in order, and the added columns must equal the `decide` / `shift` values and 0 masked probes (arm A0); its
+  MultiQC table is checked in L1. `sex_mismatch` is 0 for all 173 LIMS M/F sequencings.
+- The pinned originals are checked by MD5: `MD5SUMS` must list exactly the three scripts, and each must match.
 - L4 compares `.cnr`, `.cns`, `.call.cns`, `genemetrics(.noparfix).tsv`, `dropout_qc.tsv` and the sex QC fields with
   the baselines. In the UMI mask-on configuration, a treated male with a masked probe has no UMI post-step baseline,
   so its `genemetrics.tsv` is reported as `n/a` (one check); the non-UMI N-M run covers that path.
