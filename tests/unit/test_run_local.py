@@ -350,6 +350,87 @@ def test_bed_failure_report_keeps_the_cleanup_notes(tmp_path, monkeypatch):
     assert procutil.UNCONFIRMED in detail and "still running after the kill" in detail
 
 
+# round 7 (W2): the harness cannot pass without comparing every local test sequencing
+
+def manifest(tmp_path, monkeypatch, rows):
+    real = run_local.read_tsv(run_local.SAMPLES)
+    p = tmp_path / "local_samples.tsv"
+    with p.open("w") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(real[0]), delimiter="\t", lineterminator="\n")
+        w.writeheader()
+        w.writerows(rows(real))
+    monkeypatch.setattr(run_local, "SAMPLES", p)
+    return real
+
+
+def test_the_local_manifest_has_the_16_sequencings():
+    rows = run_local.local_samples()
+    assert len(rows) == run_local.N_LOCAL == 16 and len({r["sample"] for r in rows}) == 16
+
+
+@pytest.mark.parametrize("case, message", [
+    ("empty", "0 local test sequencings, expected 16"),
+    ("incomplete", "15 local test sequencings, expected 16"),
+    ("extra", "17 local test sequencings, expected 16"),
+    ("duplicate", "a repeated sample ID"),
+    ("blank", "a row without a run or sample"),
+])
+def test_an_empty_or_incomplete_manifest_fails_before_any_work(tmp_path, monkeypatch, case, message):
+    edit = {"empty": lambda rows: [],
+            "incomplete": lambda rows: rows[:-1],
+            "extra": lambda rows: rows + [{**rows[0], "sample": rows[0]["sample"] + "-extra"}],
+            "duplicate": lambda rows: rows[:-1] + [{**rows[-1], "sample": rows[0]["sample"]}],
+            "blank": lambda rows: rows[:-1] + [{**rows[-1], "sample": ""}]}[case]
+    manifest(tmp_path, monkeypatch, edit)
+    monkeypatch.setattr(run_local, "HARNESS", tmp_path / "harness")
+    for fn in ("treated_male_log", "run_sample", "check_sample", "fetch_bed"):
+        monkeypatch.setattr(run_local, fn, lambda *a, fn=fn: pytest.fail(f"{fn} ran on a bad manifest"))
+    with pytest.raises(SystemExit) as e:
+        run_local.main(["--data", "umi", "--label", "test"])
+    assert message in str(e.value.code)
+    assert not (tmp_path / "harness").exists()
+
+
+def test_an_empty_selection_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_local, "HARNESS", tmp_path)
+    monkeypatch.setattr(run_local, "local_samples", lambda: [])
+    monkeypatch.setattr(run_local, "run_sample", lambda *a: pytest.fail("a worker started"))
+    with pytest.raises(SystemExit, match="no local test sequencing selected"):
+        run_local.main(["--data", "umi", "--label", "test"])
+    with pytest.raises(SystemExit, match="no local test sequencing matches --samples nothing"):
+        monkeypatch.setattr(run_local, "local_samples", lambda: [{"run": "R1", "sample": "S1"}])
+        run_local.main(["--data", "umi", "--label", "test", "--samples", "nothing"])
+
+
+@pytest.mark.parametrize("checks", [[], [("n/a", "only n/a")]], ids=["none", "only_na"])
+def test_a_sequencing_with_nothing_compared_fails(tmp_path, monkeypatch, checks):
+    monkeypatch.setattr(run_local, "HARNESS", tmp_path)
+    rows = [{"run": "R1", "sample": "S1"}, {"run": "R1", "sample": "S2"}]
+    monkeypatch.setattr(run_local, "local_samples", lambda: rows)
+    monkeypatch.setattr(run_local, "treated_male_log", lambda *args: {})
+    monkeypatch.setattr(run_local, "run_sample", lambda *a: 0)
+
+    def check(row, *args):
+        if row["sample"] == "S1":
+            return [(row["sample"], ".cnr", "PASS", "")]
+        return [(row["sample"], "genemetrics.tsv", res, d) for res, d in checks]
+    monkeypatch.setattr(run_local, "check_sample", check)
+    assert run_local.main(["--data", "umi", "--label", "test"]) == 1
+    with (tmp_path / "test" / "report.tsv").open() as fh:
+        report = list(csv.DictReader(fh, delimiter="\t"))
+    assert [(r["sample"], r["result"]) for r in report if r["check"] == "checks"] == [("S2", "FAIL")]
+    assert "nothing was compared" in report[-1]["detail"]
+
+
+def test_a_repeated_sample_in_the_selection_fails(tmp_path, monkeypatch):
+    monkeypatch.setattr(run_local, "HARNESS", tmp_path)
+    rows = [{"run": "R1", "sample": "S1"}, {"run": "R2", "sample": "S1"}]
+    monkeypatch.setattr(run_local, "local_samples", lambda: rows)
+    monkeypatch.setattr(run_local, "run_sample", lambda *a: pytest.fail("a worker started"))
+    with pytest.raises(SystemExit, match="selected more than once"):
+        run_local.main(["--data", "umi", "--label", "test"])
+
+
 # round 7 (W3): an unexpected exception from the group kill is unconfirmed cleanup, reported in the log; the timeout
 # is still exit 124 (a FAIL in the report), the container removal is attempted and the marker written
 

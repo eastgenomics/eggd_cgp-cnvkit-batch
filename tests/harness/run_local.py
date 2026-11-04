@@ -47,6 +47,7 @@ BED_TIMEOUT = 300              # seconds for the shared BED download
 CLEANUP_TIMEOUT = 30           # seconds per process/container cleanup step
 _BED_LOCK = threading.Lock()
 QC_HEADER = "arm\tchromosome\tstart\tend\tgene\tlog2\traw_reads\treason\n"
+N_LOCAL = 16                   # local test sequencings in local_samples.tsv (each sample ID once)
 SEX_FIELDS_UMI = ["lims_sex", "raw_Y_logratio", "chrY_present", "chrY_sex", "raw_X_logratio", "raw_cnvkit_sex",
                   "cnr_X_logratio", "cnr_cnvkit_sex", "sex_mismatch"]
 
@@ -57,7 +58,16 @@ def read_tsv(path):
 
 
 def local_samples():
-    return read_tsv(SAMPLES)
+    """The local test sequencings (local_samples.tsv), validated (round 7, W2): exactly N_LOCAL rows, each sample ID
+    once (the report is per sample), so an empty or incomplete manifest cannot pass with fewer checks."""
+    rows = read_tsv(SAMPLES)
+    keys = [r.get("sample") or "" for r in rows]
+    dup = sorted({k for k in keys if keys.count(k) > 1})
+    if dup or "" in keys or any(not r.get("run") for r in rows):
+        sys.exit(f"{SAMPLES}: a row without a run or sample, or a repeated sample ID: {', '.join(dup) or '(empty)'}")
+    if len(rows) != N_LOCAL:
+        sys.exit(f"{SAMPLES}: {len(rows)} local test sequencings, expected {N_LOCAL}")
+    return rows
 
 
 def treated_male_log(data, mask):
@@ -268,6 +278,10 @@ def main(argv=None):
         rows = [r for r in rows if any(x in r["sample"] for x in a.samples)]
         if not rows:
             sys.exit("no local test sequencing matches --samples " + " ".join(a.samples))
+    if not rows:     # round 7 (W2): a run with nothing to check must not pass
+        sys.exit("no local test sequencing selected")
+    if len({r["sample"] for r in rows}) != len(rows):     # the report is per sample
+        sys.exit("a sample ID is selected more than once")
     label = a.label or f"{a.data}-mask_{a.dropout_mask}-{a.start_from}"
     out = HARNESS / label
     out.mkdir(parents=True, exist_ok=True)
@@ -293,6 +307,10 @@ def main(argv=None):
             rcs = dict(zip([(r["run"], r["sample"]) for r in rows], ex.map(lambda r: run_sample(r, a, out), rows)))
         for r in rows:
             results += check_sample(r, a, out, rcs[(r["run"], r["sample"])], male_log)
+    # round 7 (W2): every selected sequencing must have been compared: one with no PASS (no check, or only n/a) fails
+    checked = {s for s, _, res, _ in results if res in ("PASS", "FAIL")}
+    results += [(r["sample"], "checks", "FAIL", "no check passed or failed: nothing was compared")
+                for r in rows if r["sample"] not in checked]
     with open(out / "report.tsv", "w") as fh:
         fh.write("sample\tcheck\tresult\tdetail\n")
         for x in results:
@@ -308,7 +326,7 @@ def main(argv=None):
         print(f"{status}  {r['run']:15s} {r['sample']:52s} {len(checks) - len(fails) - na} pass"
               f"{', ' + str(na) + ' n/a' if na else ''}{'; ' + '; '.join(fails) if fails else ''}")
     n_fail = sum(res == "FAIL" for _, _, res, _ in results)
-    print(f"{label}: {len(results)} checks, {n_fail} FAIL; report {out / 'report.tsv'}")
+    print(f"{label}: {len(rows)} sequencings, {len(results)} checks, {n_fail} FAIL; report {out / 'report.tsv'}")
     return 1 if n_fail else 0
 
 

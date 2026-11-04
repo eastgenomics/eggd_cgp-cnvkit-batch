@@ -328,8 +328,29 @@ def prefetch(which, rows, jobs=12):
     return out
 
 
+N_E3 = 226   # E3: every validation sequencing (inputs.tsv), each once
+
+
+def expected_keys(which):
+    """The job keys a set must record: the T matrix's cases, or one per inputs.tsv sequencing (N_E3) for E3."""
+    inputs = read_tsv(RUNS / "inputs.tsv")
+    if which == "T":
+        return [c["case"] for c in t_matrix(inputs)]
+    keys = [f"{r['run']}/{r['sample']}" for r in inputs]
+    if len(set(keys)) != len(keys) or len(keys) != N_E3:
+        sys.exit(f"{RUNS / 'inputs.tsv'}: {len(set(keys))} distinct sequencings in {len(keys)} rows, expected {N_E3}")
+    return keys
+
+
 def check(a):
     rows = read_tsv(jobs_path(a.set))
+    # round 7: an empty or incomplete jobs file must not pass with fewer checks; every expected job, each once
+    keys, expected = [r["key"] for r in rows], expected_keys(a.set)
+    if sorted(keys) != sorted(expected):
+        repeated = sorted({k for k in keys if keys.count(k) > 1})
+        sys.exit(f"{jobs_path(a.set)}: {len(keys)} jobs recorded, expected {len(expected)}; missing "
+                 f"{sorted(set(expected) - set(keys))[:5]}, extra {sorted(set(keys) - set(expected))[:5]}, "
+                 f"repeated {repeated[:5]}")
     fetched = prefetch(a.set, rows)
     desc = {job: d for job, (d, _) in fetched.items()}
     results = []

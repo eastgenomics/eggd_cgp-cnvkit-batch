@@ -42,6 +42,7 @@ def vj(tmp_path, monkeypatch):
         calls.append(list(args))
         return "job-NEW\n" if args[0] == "run" else ""
     monkeypatch.setattr(m, "dx", fake_dx)
+    monkeypatch.setattr(m, "N_E3", 1)      # the fixture's inputs.tsv has one sequencing (the real one 226)
     m.calls = calls
     return m
 
@@ -162,3 +163,41 @@ def test_job_log_cached_only_when_finished_and_not_empty(vj, tmp_path, monkeypat
     d, text = vj.fetch_job("job-1", tmp_path / "job")
     assert text == log
     assert (tmp_path / "job" / "job.log").exists() is cached
+
+
+# round 7: `check` cannot pass on an empty or incomplete jobs file (fewer jobs, fewer checks)
+
+@pytest.mark.parametrize("rows", [[], ["0797_V2/S1", "0797_V2/S1"], ["0797_V2/S2"]], ids=["empty", "repeated", "other"])
+def test_check_refuses_an_empty_or_incomplete_jobs_file(vj, monkeypatch, rows):
+    vj.write_tsv(vj.jobs_path("E3"), [dict(key=k, run="0797_V2", sample=k.split("/")[1], sample_id="S1", extra="{}",
+                                           job="job-OLD", applet="applet-NEW", git_commit="abc1234") for k in rows],
+                 JOB_COLS)
+    monkeypatch.setattr(vj, "prefetch", lambda *a: pytest.fail("prefetched an incomplete set"))
+    with pytest.raises(SystemExit, match="expected 1"):
+        vj.check(argparse.Namespace(set="E3"))
+    assert not (vj.RUNS / "E3_report.tsv").exists()
+
+
+def test_check_requires_every_e3_sequencing(vj, monkeypatch):
+    monkeypatch.setattr(vj, "N_E3", 226)
+    record(vj, "applet-NEW")
+    with pytest.raises(SystemExit, match="1 distinct sequencings in 1 rows, expected 226"):
+        vj.check(argparse.Namespace(set="E3"))
+
+
+def test_check_requires_the_whole_t_matrix(vj, monkeypatch):
+    monkeypatch.setattr(vj, "t_matrix", lambda inputs: [dict(case="T1_lims_M"), dict(case="T2_lims_F")])
+    vj.write_tsv(vj.jobs_path("T"), [dict(key="T1_lims_M", run="0797_V2", sample="S1", sample_id="S1", extra="{}",
+                                          job="job-OLD", applet="applet-NEW", git_commit="abc1234")], JOB_COLS)
+    with pytest.raises(SystemExit, match=r"1 jobs recorded, expected 2; missing \['T2_lims_F'\]"):
+        vj.check(argparse.Namespace(set="T"))
+
+
+def test_the_recorded_sets_are_complete():
+    # the committed evidence: E3 has every validation sequencing once, T the whole matrix
+    spec = importlib.util.spec_from_file_location("validation_jobs_real", REPO / "tests" / "dx" / "validation_jobs.py")
+    m = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(m)
+    for which in ("T", "E3"):
+        keys = [r["key"] for r in m.read_tsv(m.jobs_path(which))]
+        assert sorted(keys) == sorted(m.expected_keys(which)), which
