@@ -31,7 +31,8 @@ diploid in a male, so every PAR gene (on this panel: CRLF2) is reported 1.0 too 
              and every field but log2; a row of a segment the shift left unchanged (one spanning a PAR boundary)
              must be unchanged and equal L + 1.0 (par_check span; the gene@segment is printed as span_genes). With
              overlapping segments (overlapping targets) a row is explained when any segment it overlaps or lies
-             in explains it (row_segments), as genemetrics reports a gene once per segment it overlaps. Anything else is an unexplained PAR
+             in, and whose probes and weight it carries (segment_probes, segment_weight), explains it
+             (row_segments), as genemetrics reports a gene once per segment it overlaps. Anything else is an unexplained PAR
              discrepancy (par_check 0): exit 1, and the app publishes no outputs. 'Equal' means CNVkit's %.6g
              print of that value, within half a unit in the 6th significant digit at its magnitude (prints_as).
 
@@ -182,12 +183,20 @@ def read_genemetrics(path):
     return hdr, rows
 
 
-def seg_lookup(cns):
+SEGMENT_FIELDS = (('segment_probes', 'probes'), ('segment_weight', 'weight'))   # genemetrics column, call.cns column
+
+
+def seg_lookup(cns, gm_names=()):
+    """The call.cns segments by chromosome: (start, end, log2, derived), derived the segment's own fields genemetrics
+    copies into each row it reports from it (gene_metrics_by_segment: segment_probes, segment_weight), as
+    (index in the genemetrics row, call.cns value) for those columns the genemetrics header gm_names has."""
     segs = collections.defaultdict(list)
     with open(cns) as f:
-        next(f)
+        names = f.readline().rstrip('\n').split('\t')
+        pairs = [(gm_names.index(g), names.index(k)) for g, k in SEGMENT_FIELDS if g in gm_names and k in names]
         for l in f:
-            c = l.split('\t'); segs[c[0]].append((int(c[1]), int(c[2]), float(c[4])))
+            c = l.rstrip('\n').split('\t')
+            segs[c[0]].append((int(c[1]), int(c[2]), float(c[4]), tuple((i, c[j]) for i, j in pairs)))
     return segs
 
 
@@ -242,13 +251,21 @@ def may_be_unreported(x):
     return abs(x) < GM_THRESHOLD + FLOAT_SLACK
 
 
-def row_segments(segs, s, e):
-    """The chrX call.cns segments (start, end, log2) a genemetrics row [s, e) can come from: those it overlaps, and
-    those that contain it (the base's lookup; this also covers a zero-length row at a segment's start). genemetrics
+def same_print(a, b):
+    """Two printed values are one: the same text, or numbers within CNVkit's %.6g print of each other."""
+    return a == b or (_parses(float, a) and _parses(float, b) and prints_as(float(a), float(b)))
+
+
+def row_segments(segs, s, e, c=None):
+    """The chrX call.cns segments (start, end, log2, derived) a genemetrics row [s, e) can come from: those it
+    overlaps, and those that contain it (the base's lookup; this also covers a zero-length row at a segment's start),
+    and, given the row's fields c, whose derived fields (seg_lookup) the row carries: a segment genemetrics filtered
+    out (--min-probes on segment_probes) or did not report the row from cannot explain it. genemetrics
     reports a gene once per segment whose range overlaps the gene's bins (by_ranges, mode 'outer'), so with
     non-overlapping segments this is the one segment that contains the row; with overlapping segments (overlapping
     targets) it can be several, and a row may extend past the segment it comes from."""
-    return [x for x in segs['chrX'] if (x[0] < e and s < x[1]) or (x[0] <= s and e <= x[1])]
+    return [x for x in segs['chrX'] if ((x[0] < e and s < x[1]) or (x[0] <= s and e <= x[1]))
+            and (c is None or all(same_print(c[i].rstrip('\n'), v) for i, v in x[3]))]
 
 
 def shifted(seg):
@@ -276,7 +293,8 @@ def par_row_verdicts(p0, p1, segs):
     changed segment, and either be replaced by a corrected after-row with the same gene, coordinates and fields
     other than log2, corrected by that same segment (so a same-name row elsewhere does not count), or have
     |L| < 0.3 (dropped below the threshold once the +1 is gone); otherwise it is unexplained.
-    A row's segments are row_segments: one normally, several where segments overlap; the row is explained when any
+    A row's segments are row_segments: one normally, several where segments overlap, each carrying the row's
+    segment_probes and segment_weight; the row is explained when any
     of them explains it (Z1: all of them would reject a valid row whose overlapping segments differ in log2, as
     genemetrics reports it once per segment, each at that segment's log2).
     'Equals' is prints_as: the row is CNVkit's %.6g print of that level, within half a unit in its 6th significant
@@ -288,7 +306,7 @@ def par_row_verdicts(p0, p1, segs):
     corrected = collections.defaultdict(list)  # without_log2(row) -> per corrected after-row, the segments fitting it
     for l in p1:
         c = l.split('\t'); s, e, v = int(c[2]), int(c[3]), float(c[4])
-        cand = row_segments(segs, s, e)
+        cand = row_segments(segs, s, e, c)
         unshifted = [x for x in cand if not shifted(x) and prints_as(v, before_level(x[2]))
                      and may_be_reported(before_level(x[2]))]
         fixed = [x for x in cand if shifted(x) and prints_as(v, after_level(x[2]))
@@ -304,7 +322,7 @@ def par_row_verdicts(p0, p1, segs):
     after_keys = {without_log2(l.split('\t')) for l in p1}
     for l in before.elements():
         c = l.split('\t'); s, e, v = int(c[2]), int(c[3]), float(c[4])
-        fits = [x for x in row_segments(segs, s, e) if shifted(x) and prints_as(v, before_level(x[2]))
+        fits = [x for x in row_segments(segs, s, e, c) if shifted(x) and prints_as(v, before_level(x[2]))
                 and may_be_reported(before_level(x[2]))]
         pending = corrected[without_log2(c)]
         match = next((i for i, fx in enumerate(pending) if set(fx) & set(fits)), None)
@@ -350,7 +368,8 @@ def compare(orig, new, call_cns):
     # Each PAR row is judged against its own segment (par_row_verdicts). par_check is 0 when any row is unexplained,
     # 'span' when a row is spanned, or a spanning segment is present and the PAR rows are unchanged (the
     # validation's label: on the 60 validated treated males per set every label is unchanged), and 1 otherwise.
-    spanned, unexplained = par_row_verdicts(p0, p1, seg_lookup(call_cns))
+    names = (h0 if r0 else h1).rstrip('\n').split('\t')   # the rows' header (the other may be the empty one)
+    spanned, unexplained = par_row_verdicts(p0, p1, seg_lookup(call_cns, names))
     if unexplained:
         rec['unexplained'] = ';'.join(unexplained)
         rec['par_check'] = 0
