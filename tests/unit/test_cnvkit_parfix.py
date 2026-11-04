@@ -220,7 +220,7 @@ def gm(tmp_path, name, *rows, header=GM_H):
 def call_cns(tmp_path, log2="0.26805", start=1190891, end=2781479):
     p = tmp_path / "s.call.cns"
     p.write_text(CNS_H + f"chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
-                         f"chrX\t{start}\t{end}\tCRLF2\t{log2}\t2\t679\t8\t7.2\n")
+                         f"chrX\t{start}\t{end}\tCRLF2\t{log2}\t3\t679\t8\t7.2\n")
     return p
 
 
@@ -319,7 +319,7 @@ def test_compare_span_elsewhere_does_not_explain_a_par_row(tmp_path):
     # after the fix: the reference calls this 'span' (any spanning segment + unchanged PAR rows); the port does not
     cns = tmp_path / "s.call.cns"
     cns.write_text(CNS_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
-                           "chrX\t1190891\t2781479\tCRLF2\t0.26805\t2\t679\t8\t7.2\n"
+                           "chrX\t1190891\t2781479\tCRLF2\t0.26805\t3\t679\t8\t7.2\n"
                            "chrX\t155000000\t155800000\tPAR2SPAN\t-0.1\t2\t500\t8\t7.2\n")
     o, n = gm(tmp_path, "o", NONPAR, CRLF2_ORIG), gm(tmp_path, "n", NONPAR, CRLF2_ORIG)
     rec = port.compare(o, n, cns)
@@ -339,10 +339,10 @@ PAR2_FIXED = "VAMP7\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t7.2\t8\n"
 
 
 def cns_rows(tmp_path, *rows):
-    """rows: (start, end, log2[, probes, weight]); probes 8 and weight 7.2 by default, as the rows above carry."""
+    """rows: (start, end, log2[, probes, weight]); probes 8, weight 7.2 and cn 3 by default, as the rows above carry."""
     p = tmp_path / "s.call.cns"
     p.write_text(CNS_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n" + "".join(
-        f"chrX\t{s}\t{e}\tG\t{l2}\t2\t500\t{n}\t{w}\n" for s, e, l2, n, w in (r + (8, 7.2)[len(r) - 3:] for r in rows)))
+        f"chrX\t{s}\t{e}\tG\t{l2}\t3\t500\t{n}\t{w}\n" for s, e, l2, n, w in (r + (8, 7.2)[len(r) - 3:] for r in rows)))
     return p
 
 
@@ -879,7 +879,7 @@ def test_compare_accepts_header_only_tables(tmp_path):
 def test_compare_accepts_a_call_cns_nan_segment(tmp_path):
     cns = tmp_path / "s.call.cns"
     cns.write_text(CNS_H + "chr1\t100\t200\tG\tnan\t2\t0\t1\t0\n"
-                           "chrX\t1190891\t2781479\tCRLF2\t0.26805\t2\t679\t8\t7.2\n")
+                           "chrX\t1190891\t2781479\tCRLF2\t0.26805\t3\t679\t8\t7.2\n")
     assert port.compare(gm(tmp_path, "o", NONPAR, CRLF2_ORIG), gm(tmp_path, "n", NONPAR), cns)["par_check"] == 1
 
 

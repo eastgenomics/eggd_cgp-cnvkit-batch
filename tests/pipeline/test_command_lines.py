@@ -196,7 +196,8 @@ def test_only_segment_reads_the_masked_file(tmp_path):
 
 GM_H = "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tcn\tprobes\tsegment_weight\tsegment_probes\n"
 TP53 = "TP53\tchr17\t7661779\t7687538\t-0.62\t400\t5\t1\t10\t5\t10\n"
-CRLF2 = "CRLF2\tchrX\t1190891\t1212654\t1.26805\t679\t7.2\t3\t8\t7.2\t8\n"
+# cn 2: its call.cns segment's cn, which genemetrics copies into the row (the .cnr has no cn column)
+CRLF2 = "CRLF2\tchrX\t1190891\t1212654\t1.26805\t679\t7.2\t2\t8\t7.2\t8\n"
 CALL_H = "chromosome\tstart\tend\tgene\tlog2\tcn\tdepth\tprobes\tweight\n"
 
 
@@ -289,7 +290,7 @@ def test_parfix_span_names_the_gene_and_segment(tmp_path):
     # the male +1: 1.26805 = segment 0.26805 + 1)
     env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2))
     (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
-                                                "chrX\t1190891\t9000000\tCRLF2\t0.26805\t1\t679\t8\t7.2\n")
+                                                "chrX\t1190891\t9000000\tCRLF2\t0.26805\t2\t679\t8\t7.2\n")
     run = run_app(tmp_path, PARX, stub_env=env)
     assert run.returncode == 0, run.stderr
     assert "span_genes=CRLF2@chrX:1190891-9000000 par_check=span" in run.stdout
@@ -302,7 +303,7 @@ def test_parfix_span_row_without_the_male_shift_fails_the_job(tmp_path):
     # R1: an unchanged row in a spanning segment must equal segment + 1; here the segment is -0.9
     env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2))
     (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
-                                                "chrX\t1190891\t9000000\tCRLF2\t-0.9\t1\t679\t8\t7.2\n")
+                                                "chrX\t1190891\t9000000\tCRLF2\t-0.9\t2\t679\t8\t7.2\n")
     run = run_app(tmp_path, PARX, stub_env=env)
     assert run.returncode != 0
     assert "FAILED: par_check 0" in run.stderr and "CRLF2@chrX:1190891-1212654" in run.stderr
@@ -315,7 +316,7 @@ def test_parfix_span_row_equal_to_the_unshifted_segment_fails_the_job(tmp_path):
     env = parfix_fixtures(tmp_path, parfix_rows=(TP53, row))
     (tmp_path / "gm.tsv").write_text(GM_H + TP53 + row)
     (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
-                                                "chrX\t1190891\t9000000\tCRLF2\t-0.5\t1\t679\t8\t7.2\n")
+                                                "chrX\t1190891\t9000000\tCRLF2\t-0.5\t2\t679\t8\t7.2\n")
     run = run_app(tmp_path, PARX, stub_env=env)
     assert run.returncode != 0
     assert "FAILED: par_check 0" in run.stderr and "CRLF2@chrX:1190891-1212654" in run.stderr
@@ -325,7 +326,7 @@ def test_parfix_span_row_equal_to_the_unshifted_segment_fails_the_job(tmp_path):
 
 def test_parfix_missing_row_not_excused_by_the_same_gene_elsewhere(tmp_path):
     # round 3 (S2): CRLF2 (segment 0.5, so reported after the fix) is missing; a CRLF2 row in PAR2 does not excuse it
-    other = "CRLF2\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t7.2\t8\n"
+    other = "CRLF2\tchrX\t155881000\t155943000\t0.5\t500\t6\t2\t9\t7.2\t8\n"
     env = parfix_fixtures(tmp_path, parfix_rows=(TP53, other))
     (tmp_path / "gm.tsv").write_text(GM_H + TP53 + CRLF2.replace("1.26805", "1.5"))
     (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
@@ -364,7 +365,7 @@ def test_parfix_original_row_below_the_threshold_fails_the_job(tmp_path, seg_end
     env = parfix_fixtures(tmp_path, parfix_rows=(TP53, parfix_row))
     (tmp_path / "gm.tsv").write_text(GM_H + TP53 + CRLF2.replace("1.26805", "-0.2"))
     (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
-                                                f"chrX\t1190891\t{seg_end}\tCRLF2\t-1.2\t1\t679\t8\t7.2\n")
+                                                f"chrX\t1190891\t{seg_end}\tCRLF2\t-1.2\t2\t679\t8\t7.2\n")
     run = run_app(tmp_path, PARX, stub_env=env)
     assert run.returncode != 0
     assert "FAILED: par_check 0" in run.stderr and f"({message})" in run.stderr

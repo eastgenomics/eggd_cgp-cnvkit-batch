@@ -31,7 +31,8 @@ diploid in a male, so every PAR gene (on this panel: CRLF2) is reported 1.0 too 
              and every field but log2; a row of a segment the shift left unchanged (one spanning a PAR boundary)
              must be unchanged and equal L + 1.0 (par_check span; the gene@segment is printed as span_genes). With
              overlapping segments (overlapping targets) a row is explained when any segment it overlaps or lies
-             in, and whose probes and weight it carries (segment_probes, segment_weight), explains it
+             in, and whose probes, weight and cn it carries (segment_probes, segment_weight, and cn where
+             genemetrics copies it from the segment), explains it
              (row_segments), as genemetrics reports a gene once per segment it overlaps. Anything else is an unexplained PAR
              discrepancy (par_check 0): exit 1, and the app publishes no outputs. 'Equal' means CNVkit's %.6g
              print of that value, within half a unit in the 6th significant digit at its magnitude (prints_as).
@@ -44,9 +45,11 @@ Usage
       prints "<1|0>\t<reason>"; exit 1 if the sex table is malformed (cnr_sex)
   cnvkit_parfix.py shift   <s.cnr> <s.call.cns> <outdir>
       writes <outdir>/<s.cnr>, <outdir>/<s.call.cns>; prints "par_bins=N span_bins=N par_segs=N span_segs=N"
-  cnvkit_parfix.py compare <original.genemetrics.tsv> <new.genemetrics.tsv> <s.call.cns>
+  cnvkit_parfix.py compare <original.genemetrics.tsv> <new.genemetrics.tsv> <s.call.cns> [<s.cnr>]
       prints key=value statistics, ending with par_check; exit 1 if a genemetrics table cannot be read
-      (read_genemetrics), the headers differ, any non-PAR row differs or par_check is 0
+      (read_genemetrics), the headers differ, any non-PAR row differs or par_check is 0. <s.cnr>, the .cnr
+      genemetrics read (its header only), decides whether the rows' cn is the segment's (seg_lookup); without it, the
+      .cnr is taken to have no cn column, as `cnvkit.py fix` writes it
 """
 import argparse
 import collections
@@ -186,17 +189,22 @@ def read_genemetrics(path):
     return hdr, rows
 
 
-SEGMENT_FIELDS = (('segment_probes', 'probes'), ('segment_weight', 'weight'))   # genemetrics column, call.cns column
+# genemetrics column, call.cns column: the segment fields genemetrics copies into each row it reports from the segment
+# (gene_metrics_by_segment): probes and weight always; cn, like every call.cns column the .cnr lacks (extra_cols), only
+# when the .cnr has no cn column (otherwise the row's cn is its first bin's)
+SEGMENT_FIELDS = (('segment_probes', 'probes'), ('segment_weight', 'weight'), ('cn', 'cn'))
 
 
-def seg_lookup(cns, gm_names=()):
+def seg_lookup(cns, gm_names=(), cnr_names=()):
     """The call.cns segments by chromosome: (start, end, log2, derived), derived the segment's own fields genemetrics
-    copies into each row it reports from it (gene_metrics_by_segment: segment_probes, segment_weight), as
-    (index in the genemetrics row, call.cns value) for those columns the genemetrics header gm_names has."""
+    copies into each row it reports from it (SEGMENT_FIELDS: segment_probes, segment_weight, and cn when the .cnr
+    header cnr_names has none), as (index in the genemetrics row, call.cns value) for those columns the genemetrics
+    header gm_names has."""
     segs = collections.defaultdict(list)
     with open(cns) as f:
         names = f.readline().rstrip('\n').split('\t')
-        pairs = [(gm_names.index(g), names.index(k)) for g, k in SEGMENT_FIELDS if g in gm_names and k in names]
+        pairs = [(gm_names.index(g), names.index(k)) for g, k in SEGMENT_FIELDS
+                 if g in gm_names and k in names and not (g == k and k in cnr_names)]
         for l in f:
             c = l.rstrip('\n').split('\t')
             segs[c[0]].append((int(c[1]), int(c[2]), float(c[4]), tuple((i, c[j]) for i, j in pairs)))
@@ -297,7 +305,7 @@ def par_row_verdicts(p0, p1, segs):
     other than log2, corrected by that same segment (so a same-name row elsewhere does not count), or have
     |L| < 0.3 (dropped below the threshold once the +1 is gone); otherwise it is unexplained.
     A row's segments are row_segments: one normally, several where segments overlap, each carrying the row's
-    segment_probes and segment_weight; the row is explained when any
+    segment_probes, segment_weight and (where copied from the segment) cn; the row is explained when any
     of them explains it (Z1: all of them would reject a valid row whose overlapping segments differ in log2, as
     genemetrics reports it once per segment, each at that segment's log2).
     'Equals' is prints_as: the row is CNVkit's %.6g print of that level, within half a unit in its 6th significant
@@ -372,9 +380,10 @@ def bin_row_verdicts(p0, p1):
     return unexplained
 
 
-def compare(orig, new, call_cns):
+def compare(orig, new, call_cns, cnr=None):
     """genemetrics_parfix.compare for one sample; returns the statistics (raises CheckFailed when the headers or the
-    non-PAR rows differ, and ValueError when a genemetrics table cannot be read)."""
+    non-PAR rows differ, and ValueError when a genemetrics table cannot be read). cnr: the .cnr genemetrics read, for
+    its header (seg_lookup); None: no cn column, as `cnvkit.py fix` writes it."""
     rec = {}
     rec['par_segs'], rec['span_segs'] = par_counts(call_cns)
     h0, r0 = read_genemetrics(orig); h1, r1 = read_genemetrics(new)
@@ -399,7 +408,11 @@ def compare(orig, new, call_cns):
     # validation's label: on the 60 validated treated males per set every label is unchanged), 'bins' with no
     # call.cns segments (bin_row_verdicts), and 1 otherwise.
     names = (h0 if r0 else h1).rstrip('\n').split('\t')   # the rows' header (the other may be the empty one)
-    segs = seg_lookup(call_cns, names)
+    cnr_names = ()
+    if cnr:
+        with open(cnr) as f:
+            cnr_names = f.readline().rstrip('\n').split('\t')
+    segs = seg_lookup(call_cns, names, cnr_names)
     if not segs:   # no segments: genemetrics reported per-gene bin means (bin_row_verdicts); a reduced check
         spanned, unexplained = [], bin_row_verdicts(p0, p1)
     else:
@@ -426,7 +439,7 @@ def main(argv=None):
     p = sp.add_parser('shift')
     p.add_argument('cnr'); p.add_argument('call_cns'); p.add_argument('outdir')
     p = sp.add_parser('compare')
-    p.add_argument('orig'); p.add_argument('new'); p.add_argument('call_cns')
+    p.add_argument('orig'); p.add_argument('new'); p.add_argument('call_cns'); p.add_argument('cnr', nargs='?')
     a = ap.parse_args(argv)
     try:
         if a.cmd == 'decide':
@@ -438,7 +451,7 @@ def main(argv=None):
             ns, nss = shift_par(a.call_cns, os.path.join(a.outdir, os.path.basename(a.call_cns)), 1, 4)
             print(f'par_bins={nb} span_bins={nbs} par_segs={ns} span_segs={nss}')
         else:
-            rec = compare(a.orig, a.new, a.call_cns)
+            rec = compare(a.orig, a.new, a.call_cns, a.cnr)
             stats = ' '.join(f'{k}={v}' for k, v in rec.items())
             if rec['par_check'] == 0:
                 # an unexplained PAR discrepancy: the corrected genemetrics is not trusted and the job stops

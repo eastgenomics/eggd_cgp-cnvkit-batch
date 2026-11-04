@@ -216,7 +216,7 @@ run_pipeline() {
         # no output is uploaded
         local checked
         checked=$(cnvkit_parfix.py compare "${s}.genemetrics.noparfix.tsv" "parfix/${s}.genemetrics.tsv" \
-            "${s}.call.cns") || return 1
+            "${s}.call.cns" "${s}.cnr") || return 1
         echo "[parfix] ${checked}"
         if [[ "${checked}" == *"par_check=bins" ]]; then
             echo "[parfix] WARNING: the call.cns has no segments, so genemetrics reported per-gene bin means: PAR rows"
