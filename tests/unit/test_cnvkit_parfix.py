@@ -888,7 +888,8 @@ def test_compare_without_segments_does_not_attribute_a_row_across_a_par_boundary
 
 # the minimum the comparison needs to read a genemetrics table (round 3, S3): a header naming the columns it reads,
 # one field per column, integer coordinates and a numeric log2; an empty table, or one truncated so that a row breaks
-# these, fails (a truncation leaving well-formed fields is not detected)
+# these, fails (a truncation leaving well-formed fields passes these structural checks; only the comparison after them
+# can catch it)
 
 GM_TRUNCATED = "CRLF2\tchrX\t1190891\t1212654\t0.2"
 

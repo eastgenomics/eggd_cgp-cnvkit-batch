@@ -395,7 +395,8 @@ def test_parfix_rounding_at_a_decade_completes(tmp_path, end, after, check):
     ("gene\tchromosome\n", "not a genemetrics header"),
 ])
 def test_parfix_malformed_rerun_output_fails_the_job(tmp_path, parfix_gm, message):
-    # round 3 (S3): an empty, malformed or mid-row-truncated post-step genemetrics is never published
+    # round 3 (S3): an empty or malformed post-step genemetrics, or one truncated so that a row breaks the structural
+    # checks, is never published (a truncation leaving well-formed fields is not caught by these checks)
     env = parfix_fixtures(tmp_path)
     (tmp_path / "gm_parfix.tsv").write_text(parfix_gm.replace(TP53[:20], TP53 + TP53[:20]))
     run = run_app(tmp_path, PARX, stub_env=env)

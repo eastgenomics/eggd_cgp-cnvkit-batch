@@ -89,10 +89,12 @@ them against): the job warns (`par_check=bins`) and publishes the outputs, as be
 and non-PAR rows are still checked. `compare` reads the two genemetrics tables with
 only the checks it needs to compare them: identical headers starting `gene chromosome start end log2` (CNVkit's
 header-only table, when no gene is reported, may stand on either side), one field per column, integer coordinates
-and a numeric log2; an empty table fails, and so does one truncated so that a row breaks these checks. A truncation
-that leaves well-formed fields (a last row cut inside its last field, leaving no newline) is not necessarily
-detected. The job fails, with no outputs, on such a table, when non-PAR
-rows differ or when `par_check` is 0. The corrected read-out is `genemetrics`; the uncorrected one is always written
+and a numeric log2. The job fails, with no outputs, when a table fails these checks (an empty table, or one
+truncated so that a row breaks them), when non-PAR rows differ, or when `par_check` is 0. A truncation that leaves
+well-formed fields (a last row cut inside its last field, leaving no newline) passes these checks and is caught only
+if the comparison then flags the row (a non-PAR row that differs from the original, or an unexplained PAR row); with
+no segments (`par_check=bins`) a PAR row truncated this way can be published. The corrected read-out is
+`genemetrics`; the uncorrected one is always written
 as `genemetrics_noparfix`. Without `diploid_parx_genome` no post-step runs.
 
 The `cnvkit.py sex` tables are checked before use, by the sex QC and by the PAR decision: one row naming
