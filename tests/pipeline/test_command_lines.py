@@ -338,20 +338,24 @@ def test_parfix_missing_row_not_excused_by_the_same_gene_elsewhere(tmp_path):
     assert run.outputs == {} and run.uploads == []
 
 
-def test_parfix_without_segments_warns_and_publishes(tmp_path):
-    # F2 (round 2): a header-only call.cns (an empty segmentation of all-low-coverage bins) makes genemetrics report
-    # per-gene bin means; the corrected row (-9 -> -10, cgp-cnvkit:1.0.0's output) is published, as by the base,
-    # with a warning that the PAR rows had the reduced check (par_check bins)
+@pytest.mark.parametrize("row, before, after", [
+    ("CRLF2\tchrX\t1190891\t1192091\t{}\t0\t3\t6\n", "-9", "-10"),
+    ("OVL\tchrX\t2781000\t2781400\t{}\t0\t1.5\t3\n", "-9", "-9.66667"),     # F4: the reviewer's overlapping bins
+], ids=["crlf2", "overlapping_bins"])
+def test_parfix_without_segments_warns_and_publishes(tmp_path, row, before, after):
+    # F2 (round 2), F4 (round 3): a header-only call.cns (an empty segmentation of all-low-coverage bins) makes
+    # genemetrics report per-gene bin means; the corrected table (cgp-cnvkit:1.0.0's output) is published, as by the
+    # base, with a warning that the PAR rows were not checked (par_check bins: no segment to check them against)
     h = "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tprobes\n"
-    row = "CRLF2\tchrX\t1190891\t1192091\t{}\t0\t3\t6\n"
     env = parfix_fixtures(tmp_path)
-    (tmp_path / "gm.tsv").write_text(h + row.format("-9"))
-    (tmp_path / "gm_parfix.tsv").write_text(h + row.format("-10"))
+    (tmp_path / "gm.tsv").write_text(h + row.format(before))
+    (tmp_path / "gm_parfix.tsv").write_text(h + row.format(after))
     (tmp_path / "call.cns").write_text("chromosome\tstart\tend\tgene\tlog2\tcn\tdepth\tweight\n")
     run = run_app(tmp_path, PARX, stub_env=env)
     assert run.returncode == 0, run.stderr
     assert "par_check=bins" in run.stdout and "[parfix] WARNING: the call.cns has no segments" in run.stdout
-    assert (run.workdir / f"{S}.genemetrics.tsv").read_text() == h + row.format("-10")
+    assert "rows were not checked" in run.stdout
+    assert (run.workdir / f"{S}.genemetrics.tsv").read_text() == h + row.format(after)
     assert set(run.outputs) == set(ALL_OUTPUTS)
 
 

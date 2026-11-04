@@ -219,8 +219,8 @@ run_pipeline() {
             "${s}.call.cns" "${s}.cnr") || return 1
         echo "[parfix] ${checked}"
         if [[ "${checked}" == *"par_check=bins" ]]; then
-            echo "[parfix] WARNING: the call.cns has no segments, so genemetrics reported per-gene bin means: PAR rows"
-            echo "[parfix] WARNING: are checked only for the -1.0 correction of rows wholly inside a PAR."
+            echo "[parfix] WARNING: the call.cns has no segments, so genemetrics reported per-gene bin means: the PAR"
+            echo "[parfix] WARNING: rows were not checked (no segment to check them against)."
         fi
         cp -f "parfix/${s}.genemetrics.tsv" "${s}.genemetrics.tsv"
     else

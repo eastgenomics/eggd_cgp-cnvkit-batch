@@ -817,33 +817,49 @@ def test_compare_zero_length_par_row_as_the_base(tmp_path):
     assert mine["par_check"] == theirs["par_check"] == 1 and {k: theirs[k] for k in mine} == mine
 
 
-# F2 (round 2): a header-only call.cns (all bins low-coverage: an empty segmentation). CNVkit fc65941 do_genemetrics
-# then reports per-gene bin means (gene_metrics_by_gene), without segment columns. Rows below: cgp-cnvkit:1.0.0
-# output for such a sample, -x male, before and after `shift` (tests/validation/test_parfix_empty_segments.py).
+# F2 (round 2), F4 (round 3): a header-only call.cns (all bins low-coverage: an empty segmentation). CNVkit fc65941
+# do_genemetrics then reports per-gene bin means (gene_metrics_by_gene), without segment columns, and there is no
+# segment to judge a PAR row by: the PAR rows are not checked (par_check bins; the job warns and publishes, as the base
+# did), while the headers and non-PAR rows are, as on every path. Rows below: cgp-cnvkit:1.0.0 output for such a
+# sample, -x male, before and after `shift` (tests/validation/test_parfix_empty_segments.py).
 
 GM_BINS_H = "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tprobes\n"
 BINS_NONPAR = "NONPAR\tchrX\t5000000\t5001200\t-9\t0\t3\t6\n"
 BINS_CRLF2 = "CRLF2\tchrX\t1190891\t1192091\t{}\t0\t3\t6\n"
+# the reviewer's overlapping bins 2781000-2781300, 2781100-2781600 (spanning the PAR1 end, not shifted) and
+# 2781200-2781400: a row wholly in PAR1 (first start, last end) whose mean moves by 2/3, not 1.0 (the image's output)
+BINS_OVERLAP = "OVL\tchrX\t2781000\t2781400\t{}\t0\t1.5\t3\n"
 
 
 def crlf2_bins(v):
     return [BINS_CRLF2.format(v)] if v else []
 
 
-def bins(tmp_path, before, after):
+def bins(tmp_path, before, after, nonpar_after=BINS_NONPAR, header_after=GM_BINS_H):
     cns = tmp_path / "s.call.cns"
     cns.write_text("chromosome\tstart\tend\tgene\tlog2\tcn\tdepth\tweight\n")
     o = gm(tmp_path, "s.genemetrics.noparfix.tsv", BINS_NONPAR, *before, header=GM_BINS_H)
-    n = gm(tmp_path, "s.genemetrics.tsv", BINS_NONPAR, *after, header=GM_BINS_H)
+    n = gm(tmp_path, "s.genemetrics.tsv", nonpar_after, *after, header=header_after)
     return o, n, cns
 
 
 @pytest.mark.parametrize("before, after", [
     ("-9", "-10"),                  # the image's output
     ("1.5", "0.5"), ("11", "9.99996"), ("1.26805", None), (None, "-1.26805"),
+    # not checked either: without segments, no PAR row is judged
+    ("-9", "-9"), ("-9", "-10.0001"), ("1.5", None), (None, "0.5"), ("-9", "nan"),
 ])
-def test_compare_without_segments_checks_the_bin_rows(tmp_path, before, after):
+def test_compare_without_segments_does_not_check_the_par_rows(tmp_path, before, after):
     o, n, cns = bins(tmp_path, crlf2_bins(before), crlf2_bins(after))
+    rec = port.compare(o, n, cns)
+    assert rec["par_check"] == "bins" and "unexplained" not in rec
+    proc = run("compare", o, n, cns)
+    assert proc.returncode == 0 and proc.stdout.strip().endswith("par_check=bins"), proc.stderr
+
+
+def test_compare_without_segments_overlapping_bins(tmp_path):
+    # F4: the reviewer's case (-9 -> -9.66667) was rejected by the bin-level check; it completes, as with the base
+    o, n, cns = bins(tmp_path, [BINS_OVERLAP.format("-9")], [BINS_OVERLAP.format("-9.66667")])
     assert port.compare(o, n, cns)["par_check"] == "bins"
     proc = run("compare", o, n, cns)
     assert proc.returncode == 0 and proc.stdout.strip().endswith("par_check=bins"), proc.stderr
@@ -855,15 +871,13 @@ def test_compare_without_segments_the_base_reported_par_check_0(tmp_path):
     assert ref.compare(dict(action="dry", rundir=str(tmp_path), sample="s", orig=str(o), new=str(n)))["par_check"] == 0
 
 
-@pytest.mark.parametrize("before, after", [
-    ("-9", "-9"), ("-9", "-10.0001"), ("1.5", None), (None, "0.5"), ("-9", "nan"),
-])
-def test_compare_without_segments_rejects_an_unshifted_bin_row(tmp_path, before, after):
-    o, n, cns = bins(tmp_path, crlf2_bins(before), crlf2_bins(after))
-    rec = port.compare(o, n, cns)
-    assert rec["par_check"] == 0 and rec["unexplained"] == "CRLF2@chrX:1190891-1192091"
+def test_compare_without_segments_still_checks_the_headers_and_non_par_rows(tmp_path):
+    o, n, cns = bins(tmp_path, crlf2_bins("-9"), crlf2_bins("-10"), nonpar_after=BINS_NONPAR.replace("-9", "-8"))
     proc = run("compare", o, n, cns)
-    assert proc.returncode == 1 and "FAILED: par_check 0" in proc.stderr
+    assert proc.returncode == 1 and "FAILED: non-PAR rows differ" in proc.stderr
+    o, n, cns = bins(tmp_path, crlf2_bins("-9"), crlf2_bins("-10"), header_after=GM_BINS_H.replace("probes", "n"))
+    proc = run("compare", o, n, cns)
+    assert proc.returncode == 1 and "FAILED: headers differ" in proc.stderr
 
 
 def test_compare_without_segments_does_not_attribute_a_row_across_a_par_boundary(tmp_path):
