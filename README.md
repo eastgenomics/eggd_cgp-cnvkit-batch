@@ -227,7 +227,7 @@ python3 -m venv .venv && .venv/bin/python -m pip install --require-hashes --no-d
 
 Tests whose prerequisite is absent (Docker or the image, the validation data, ShellCheck) are **skipped, not
 failed**, and pytest still exits 0. Read the `-rs` skip summary, and do not take a run as a pass unless the layers you
-need ran with no skips (L3 + L4: 15 tests). The one exception: a Docker check that timed out and could not confirm
+need ran with no skips (L3 + L4: 17 tests). The one exception: a Docker check that timed out and could not confirm
 its own cleanup (a `docker` process may remain) fails the Docker tests instead of skipping them.
 
 | Layer | What it proves |
