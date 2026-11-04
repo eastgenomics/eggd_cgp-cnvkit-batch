@@ -30,10 +30,10 @@ Runs the validated Atlas CGP configuration (`D_gcclip_on_s2` with the dropout ma
   boundary-spanning segment (not shifted) must be unchanged and equal the segment log2 + 1.0, and is logged as
   `span_genes`. A row before the fix must be at a level `genemetrics` reports (magnitude ≥ 0.3). Values are compared
   within CNVkit's printed precision (6 significant digits) at their magnitude. Where segments overlap (overlapping
-  targets), a row is explained when any segment it overlaps or lies in, and whose `segment_probes` and
-  `segment_weight` it carries, explains it, as `genemetrics` reports a gene once per segment. With no `call.cns`
-  segments (`genemetrics` then reports per-gene bin means), PAR rows wholly inside a PAR are checked only for the
-  -1.0 correction, and the job warns (`par_check=bins`). `compare` reads the two genemetrics tables with only the checks it needs (identical headers starting
+  targets), a row is explained when any segment it overlaps or lies in, and whose `segment_probes`,
+  `segment_weight` and `cn` (copied from the segment, as the `.cnr` has no `cn`) it carries, explains it, as
+  `genemetrics` reports a gene once per segment. With no `call.cns` segments (`genemetrics` then reports per-gene bin
+  means), the PAR rows are not checked: the job warns (`par_check=bins`) and publishes, as before. `compare` reads the two genemetrics tables with only the checks it needs (identical headers starting
   `gene chromosome start end log2`, CNVkit's header-only empty table aside; one field per column; integer
   coordinates; a numeric log2), so an empty or truncated table fails the job
 - Sex QC, `cnvkit_sex_qc.py` (port of `sex_check.py` @ `31a62fc`) (DI-4103). A malformed `cnvkit.py sex` table (a
