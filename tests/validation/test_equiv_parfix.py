@@ -10,7 +10,7 @@ of its <s>.cnr and <s>.call.cns, where pipeline.sh's commands run with its file 
 and, for a treated male,
   cnvkit_parfix.py shift <s>.cnr <s>.call.cns parfix
   (cd parfix && cnvkit.py genemetrics <the same arguments>)
-  cnvkit_parfix.py compare <s>.genemetrics.noparfix.tsv parfix/<s>.genemetrics.tsv <s>.call.cns
+  cnvkit_parfix.py compare <s>.genemetrics.noparfix.tsv parfix/<s>.genemetrics.tsv <s>.call.cns <s>.cnr
 For every sequencing: the sex table names <s>.cnr and its call equals the validation log, decide accepts it (its
 sex-table checks), the decision equals the log, and genemetrics on the unmodified inputs reproduces the original
 read-out byte for byte (argument check, also for -x). For every treated male: shift and compare succeed (compare's
@@ -142,7 +142,7 @@ def test_parfix_equivalence(tmp_path, dataset, arm, calls, log_arm, rundir_filte
         if (d / "parfix" / f"{s}.genemetrics.tsv").read_bytes() != (calls / run / f"{s}.genemetrics.tsv").read_bytes():
             fails.append("post-step genemetrics differs from the validated read-out")
         p = script("cnvkit_parfix.py", "compare", f"{s}.genemetrics.noparfix.tsv", f"parfix/{s}.genemetrics.tsv",
-                   f"{s}.call.cns", cwd=d)
+                   f"{s}.call.cns", f"{s}.cnr", cwd=d)
         if p.returncode:
             return [f"{run}/{s}: compare (exit {p.returncode}: {p.stderr.strip()})"], {}
         # every statistic the log records, each compared (round 7, W4); span_genes, a port addition, iff span
@@ -206,7 +206,7 @@ def test_parfix_overlapping_segments_in_the_image(tmp_path):
         d = tmp_path / case
         os.replace(d / f"{s}.genemetrics.tsv", d / f"{s}.genemetrics.noparfix.tsv")
         p = script("cnvkit_parfix.py", "compare", f"{s}.genemetrics.noparfix.tsv", f"parfix/{s}.genemetrics.tsv",
-                   f"{s}.call.cns", cwd=d)
+                   f"{s}.call.cns", f"{s}.cnr", cwd=d)
         assert p.returncode == 0 and p.stdout.strip().endswith("par_check=1"), (case, p.stdout, p.stderr)
         assert "CRLF2" in (d / "parfix" / f"{s}.genemetrics.tsv").read_text(), case    # a PAR row was judged
         theirs = ref.compare(dict(action="dry", rundir=str(d), sample=s,
@@ -216,3 +216,34 @@ def test_parfix_overlapping_segments_in_the_image(tmp_path):
             assert p.stdout == BASE_BOTH and theirs["par_check"] == 1
         else:                 # the row starts before its own segment: the base (containment) cannot explain it
             assert theirs["par_check"] == 0
+
+
+# F3 (round 3): genemetrics copies the segment's cn into each row it reports from it, when the .cnr has no cn column
+# (CNVkit fc65941 reports.gene_metrics_by_segment: extra_cols). The reviewer's case, with CNVkit's own genemetrics:
+# CRLF2 lies in a wholly-PAR segment at 0.2 (cn 2) and in an overlapping segment spanning the PAR1 boundary at
+# 0.200001 (cn 3), with the same probes and weight. The post-step's output (the cn-2 row dropped, 0.2 < 0.3; the cn-3
+# row unchanged) completes with par_check span; the original table offered as the corrected one (the cn-2 row kept
+# its +1) must fail, though its 1.2 is the %.6g print of the cn-3 segment's 1.200001.
+CN_CNS = {"A": (1190891, 2781479, "0.2", 2), "B": (1200000, 2800000, "0.200001", 3)}
+
+
+def test_parfix_overlapping_segment_of_another_cn_in_the_image(tmp_path):
+    s = "S9-RUN-PANEL-0001-M-1"
+    (tmp_path / f"{s}.cnr").write_text(OVERLAP_CNR)
+    (tmp_path / f"{s}.call.cns").write_text(CNS_H + "chr17\t7000000\t7009200\tTP53\t-0.6\t1\t400\t10\t9\n" + "".join(
+        f"chrX\t{a}\t{b}\tCRLF2\t{lg}\t{cn}\t600\t6\t5.4\n" for a, b, lg, cn in CN_CNS.values())
+        + "chrX\t5000000\t5004200\tNONPAR\t0.0\t2\t500\t5\t4.5\n")
+    p = script("cnvkit_parfix.py", "shift", f"{s}.cnr", f"{s}.call.cns", "parfix", cwd=tmp_path)
+    assert p.returncode == 0 and p.stdout.startswith("par_bins=6 span_bins=0 par_segs=1 span_segs=1"), p.stderr
+    image_jobs(tmp_path, [(tmp_path / sub, genemetrics_cmd(s, "male")) for sub in ("", "parfix")], "cnvkit.log")
+    os.replace(tmp_path / f"{s}.genemetrics.tsv", tmp_path / f"{s}.genemetrics.noparfix.tsv")
+    before = (tmp_path / f"{s}.genemetrics.noparfix.tsv").read_text().splitlines()
+    crlf2 = [r.split("\t") for r in before if r.startswith("CRLF2\t")]
+    cn = before[0].split("\t").index("cn")
+    assert sorted((r[2], r[4], r[cn]) for r in crlf2) == [("1190891", "1.2", "2"), ("1200000", "1.2", "3")]
+    p = script("cnvkit_parfix.py", "compare", f"{s}.genemetrics.noparfix.tsv", f"parfix/{s}.genemetrics.tsv",
+               f"{s}.call.cns", f"{s}.cnr", cwd=tmp_path)
+    assert p.returncode == 0 and p.stdout.strip().endswith("par_check=span"), p.stderr
+    p = script("cnvkit_parfix.py", "compare", f"{s}.genemetrics.noparfix.tsv", f"{s}.genemetrics.noparfix.tsv",
+               f"{s}.call.cns", f"{s}.cnr", cwd=tmp_path)
+    assert p.returncode == 1 and "FAILED: par_check 0" in p.stderr and "CRLF2@chrX:1190891-1212654" in p.stderr

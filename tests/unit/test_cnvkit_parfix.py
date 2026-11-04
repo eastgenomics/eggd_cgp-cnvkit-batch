@@ -745,6 +745,53 @@ def test_compare_corrected_row_needs_its_segments_fields(tmp_path):
     assert rec["par_check"] == 1
 
 
+# F3 (round 3): genemetrics also copies the segment's cn into each row it reports from it, when the .cnr has no cn
+# column (CNVkit fc65941 reports.gene_metrics_by_segment: extra_cols, the call.cns columns the .cnr lacks). The
+# reviewer's case: overlapping segments at 0.2 (cn 2, wholly in PAR1) and 0.200001 (cn 3, spanning the PAR1 end),
+# with the same probes and weight; the cn-2 row kept its +1 (1.2, the %.6g print of the cn-3 segment's 1.200001)
+
+CN_ROW = "CRLF2\tchrX\t{}\t1212654\t1.2\t679\t7.2\t{}\t8\t7.2\t8\n"
+CN2, CN3 = CN_ROW.format(1190891, 2), CN_ROW.format(1200000, 3)
+
+
+def cn_segments(tmp_path):
+    p = tmp_path / "s.call.cns"
+    p.write_text(CNS_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                         "chrX\t1190891\t2781479\tCRLF2\t0.2\t2\t679\t8\t7.2\n"
+                         "chrX\t1200000\t9000000\tCRLF2\t0.200001\t3\t679\t8\t7.2\n")
+    return p
+
+
+def test_compare_overlapping_segment_of_another_cn_does_not_explain_the_row(tmp_path):
+    cns = cn_segments(tmp_path)
+    rec, proc = verdict(tmp_path, [CN2, CN3], [CN2, CN3], cns)
+    assert rec["par_check"] == 0 and rec["unexplained"] == "CRLF2@chrX:1190891-1212654"
+    assert proc.returncode == 1 and "FAILED: par_check 0" in proc.stderr
+    (tmp_path / "s.cnr").write_text(CNR_H)        # a .cnr without cn, as `cnvkit.py fix` writes it
+    assert port.compare(tmp_path / "o", tmp_path / "n", cns, tmp_path / "s.cnr")["par_check"] == 0
+    proc = run("compare", tmp_path / "o", tmp_path / "n", cns, tmp_path / "s.cnr")
+    assert proc.returncode == 1 and "CRLF2@chrX:1190891-1212654" in proc.stderr
+    # the base (the reference's compare) accepted it: unchanged PAR rows and a spanning segment
+    assert ref.compare(dict(action="dry", rundir=str(tmp_path), sample="s", orig=str(tmp_path / "o"),
+                            new=str(tmp_path / "n")))["par_check"] == "span"
+    # what CNVkit writes: the cn-2 row dropped (0.2 < 0.3), the cn-3 row unchanged (its segment is not shifted)
+    rec, proc = verdict(tmp_path, [CN2, CN3], [CN3], cns)
+    assert rec["par_check"] == "span" and rec["span_genes"] == "CRLF2@chrX:1200000-9000000"
+    assert proc.returncode == 0, proc.stderr
+
+
+def test_compare_cn_of_a_cnr_with_cn_is_not_the_segments(tmp_path):
+    # a .cnr with a cn column: genemetrics keeps the row's first bin's cn (not in extra_cols), so cn is not matched:
+    # an unchanged row of the spanning segment B at cn 2 (B's cn is 3)
+    cnr = tmp_path / "s.cnr"
+    cnr.write_text(CNR_H.replace("\tweight\n", "\tweight\tcn\n"))
+    row = CN_ROW.format(1200000, 2)
+    o, n = gm(tmp_path, "o", NONPAR, row), gm(tmp_path, "n", NONPAR, row)
+    assert port.compare(o, n, cn_segments(tmp_path), cnr)["par_check"] == "span"
+    assert run("compare", o, n, cn_segments(tmp_path), cnr).returncode == 0
+    assert port.compare(o, n, cn_segments(tmp_path))["par_check"] == 0       # without the .cnr: cn is matched
+
+
 def test_row_segments():
     segs = {"chrX": [(1100000, 1300000, 0.5), (1190891, 2781479, 0.5), (2781479, 9000000, 0.1)]}
     assert port.row_segments(segs, 1190891, 1212654) == segs["chrX"][:2]
