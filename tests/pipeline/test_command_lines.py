@@ -285,15 +285,141 @@ def test_parfix_span_elsewhere_does_not_excuse_a_par_row(tmp_path):
 
 
 def test_parfix_span_names_the_gene_and_segment(tmp_path):
-    # CRLF2's own segment continues into non-PAR chrX: the documented span limitation, not a failure
+    # CRLF2's own segment continues into non-PAR chrX: the documented span limitation, not a failure (the row keeps
+    # the male +1: 1.26805 = segment 0.26805 + 1)
     env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2))
     (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
-                                                "chrX\t1190891\t9000000\tCRLF2\t-0.9\t1\t679\t8\t7.2\n")
+                                                "chrX\t1190891\t9000000\tCRLF2\t0.26805\t1\t679\t8\t7.2\n")
     run = run_app(tmp_path, PARX, stub_env=env)
     assert run.returncode == 0, run.stderr
     assert "span_genes=CRLF2@chrX:1190891-9000000 par_check=span" in run.stdout
     assert "[parfix] WARNING: 1 call.cns segment(s) span a PAR boundary" in run.stdout
     assert sex_qc_row(run, S)["par_span_segments"] == "1"
+    assert set(run.outputs) == set(ALL_OUTPUTS)
+
+
+def test_parfix_span_row_without_the_male_shift_fails_the_job(tmp_path):
+    # R1: an unchanged row in a spanning segment must equal segment + 1; here the segment is -0.9
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2))
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                                "chrX\t1190891\t9000000\tCRLF2\t-0.9\t1\t679\t8\t7.2\n")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "FAILED: par_check 0" in run.stderr and "CRLF2@chrX:1190891-1212654" in run.stderr
+    assert run.outputs == {}
+
+
+def test_parfix_span_row_equal_to_the_unshifted_segment_fails_the_job(tmp_path):
+    # round 3 (S1): an unchanged CRLF2 row at -0.5 in a spanning segment at -0.5 is not 'corrected'
+    row = CRLF2.replace("1.26805", "-0.5")
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, row))
+    (tmp_path / "gm.tsv").write_text(GM_H + TP53 + row)
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                                "chrX\t1190891\t9000000\tCRLF2\t-0.5\t1\t679\t8\t7.2\n")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "FAILED: par_check 0" in run.stderr and "CRLF2@chrX:1190891-1212654" in run.stderr
+    assert "par_check=span" not in run.stdout
+    assert run.outputs == {} and run.uploads == []
+
+
+def test_parfix_missing_row_not_excused_by_the_same_gene_elsewhere(tmp_path):
+    # round 3 (S2): CRLF2 (segment 0.5, so reported after the fix) is missing; a CRLF2 row in PAR2 does not excuse it
+    other = "CRLF2\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t6\t9\n"
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, other))
+    (tmp_path / "gm.tsv").write_text(GM_H + TP53 + CRLF2.replace("1.26805", "1.5"))
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                                "chrX\t1190891\t2781479\tCRLF2\t0.5\t2\t679\t8\t7.2\n"
+                                                "chrX\t155800000\t156000000\tP2\t0.5\t2\t500\t8\t7.2\n")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "FAILED: par_check 0" in run.stderr and "CRLF2@chrX:1190891-1212654 (dropped)" in run.stderr
+    assert run.outputs == {} and run.uploads == []
+
+
+@pytest.mark.parametrize("seg_end, parfix_row, message", [
+    (2781479, CRLF2.replace("1.26805", "-1.2"), "CRLF2@chrX:1190891-1212654 (before the fix)"),    # wholly in PAR1
+    (9000000, CRLF2.replace("1.26805", "-0.2"), "CRLF2@chrX:1190891-1212654"),                    # spanning
+], ids=["wholly", "spanning"])
+def test_parfix_original_row_below_the_threshold_fails_the_job(tmp_path, seg_end, parfix_row, message):
+    # round 5 (U1): segment -1.2, so genemetrics -t 0.3 cannot report CRLF2 before the fix (-1.2 + 1 = -0.2); an
+    # original row at -0.2 is impossible, whether corrected to -1.2 or left unchanged in a spanning segment
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, parfix_row))
+    (tmp_path / "gm.tsv").write_text(GM_H + TP53 + CRLF2.replace("1.26805", "-0.2"))
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                                f"chrX\t1190891\t{seg_end}\tCRLF2\t-1.2\t1\t679\t8\t7.2\n")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "FAILED: par_check 0" in run.stderr and f"({message})" in run.stderr
+    assert "par_check=1" not in run.stdout and "par_check=span" not in run.stdout
+    assert run.outputs == {} and run.uploads == []
+
+
+@pytest.mark.parametrize("end, after, check", [(2781479, "9.99996", "1"), (9000000, "11", "span")])
+def test_parfix_rounding_at_a_decade_completes(tmp_path, end, after, check):
+    # round 4 (T3): segment 9.99996; genemetrics prints the valid pre-fix 10.99996 as 11 (%.6g)
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2.replace("1.26805", after)))
+    (tmp_path / "gm.tsv").write_text(GM_H + TP53 + CRLF2.replace("1.26805", "11"))
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                                f"chrX\t1190891\t{end}\tCRLF2\t9.99996\t2\t679\t8\t7.2\n")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode == 0, run.stderr
+    assert f"par_check={check}" in run.stdout and set(run.outputs) == set(ALL_OUTPUTS)
+
+
+@pytest.mark.parametrize("parfix_gm, message", [
+    ("", "empty file, no header"),                                   # a producer that wrote nothing
+    (GM_H + TP53[:20], "line 3 is not a 11-field genemetrics row"),  # truncated mid-row
+    ("gene\tchromosome\n", "not a genemetrics header"),
+])
+def test_parfix_malformed_rerun_output_fails_the_job(tmp_path, parfix_gm, message):
+    # round 3 (S3): a truncated or malformed post-step genemetrics is never published
+    env = parfix_fixtures(tmp_path)
+    (tmp_path / "gm_parfix.tsv").write_text(parfix_gm.replace(TP53[:20], TP53 + TP53[:20]))
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "cnvkit_parfix.py compare: FAILED" in run.stderr and message in run.stderr
+    assert run.outputs == {} and run.uploads == []
+
+
+def test_parfix_empty_original_and_rerun_fails_the_job(tmp_path):
+    # round 3 (S3): two empty genemetrics files used to compare equal (par_check 1)
+    env = parfix_fixtures(tmp_path)
+    (tmp_path / "gm.tsv").write_text("")
+    (tmp_path / "gm_parfix.tsv").write_text("")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode != 0
+    assert "cnvkit_parfix.py compare: FAILED" in run.stderr and "empty file, no header" in run.stderr
+    assert run.outputs == {} and run.uploads == []
+
+
+@pytest.mark.parametrize("case", ["male", "no_parx"])
+def test_call_cns_with_overlapping_segments_completes(tmp_path, case):
+    # Z1: CNVkit writes overlapping segments for overlapping targets. CRLF2 lies in two overlapping wholly-PAR
+    # segments, both at 0.5, and both explain the corrected row: the base completes with par_check 1, and so must
+    # the app (the outputs are the base's)
+    env = parfix_fixtures(tmp_path, parfix_rows=(TP53, CRLF2.replace("1.26805", "0.5")))
+    (tmp_path / "gm.tsv").write_text(GM_H + TP53 + CRLF2.replace("1.26805", "1.5"))
+    (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
+                                       "chrX\t1100000\t1300000\tCRLF2\t0.5\t2\t679\t8\t7.2\n"
+                                       "chrX\t1190891\t2781479\tCRLF2\t0.5\t2\t679\t8\t7.2\n")
+    run = run_app(tmp_path, PARX if case == "male" else {}, stub_env=env)
+    assert run.returncode == 0, run.stderr
+    assert set(run.outputs) == set(ALL_OUTPUTS)
+    if case == "male":
+        assert "par_check=1" in run.stdout
+        assert (run.workdir / f"{S}.genemetrics.tsv").read_text() == GM_H + TP53 + CRLF2.replace("1.26805", "0.5")
+
+
+def test_parfix_header_only_tables_complete(tmp_path):
+    # CNVkit's legitimate empty table (no gene above the threshold) before and after the fix
+    env = parfix_fixtures(tmp_path)
+    empty = "gene\tchromosome\tstart\tend\tlog2\n"
+    (tmp_path / "gm.tsv").write_text(empty)
+    (tmp_path / "gm_parfix.tsv").write_text(empty)
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode == 0, run.stderr
+    assert "par_check=1" in run.stdout and (run.workdir / f"{S}.genemetrics.tsv").read_text() == empty
     assert set(run.outputs) == set(ALL_OUTPUTS)
 
 
