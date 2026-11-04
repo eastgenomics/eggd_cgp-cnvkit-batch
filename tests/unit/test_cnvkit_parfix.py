@@ -129,13 +129,29 @@ def test_decide_cli_rejects_multi_sample_table(tmp_path):
 @pytest.mark.parametrize("body, message", [
     ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-0.95\n", "the sample row has 3 fields"),   # short row
     ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\n", "the sample row has 1 fields"),
-    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tgarbage\t-0.95\tnan\n", "is not Male or Female"),
-    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tmale\t-0.95\tnan\n", "is not Male or Female"),
-    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tUnknown\tNA\tNA\n", "is not Male or Female"),
-    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\t\t-0.95\tnan\n", "is not Male or Female"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tgarbage\t-0.95\tnan\n", "is not one of Male, Female, Unknown"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tmale\t-0.95\tnan\n", "is not one of Male, Female, Unknown"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tunknown\tNA\tNA\n", "is not one of Male, Female, Unknown"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\tNA\tNA\n", "X_logratio 'NA' is not a finite number"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-0.95\tNA\n", "Y_logratio 'NA' is not a finite number"),
+    # R3: the same holes as in cnvkit_sex_qc.py: infinities, overflow, duplicate columns
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-inf\tnan\n", "X_logratio '-inf' is not a finite number"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-0.95\tinf\n", "Y_logratio 'inf' is not a finite number"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-1e999\tnan\n", "X_logratio '-1e999' is not a finite"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\tgarbage\tnan\n", "X_logratio 'garbage' is not a finite"),
+    ("sample\tsex\tsex\tX_logratio\tY_logratio\ns.cnr\tgarbage\tMale\t-0.95\tnan\n", "duplicate column(s) sex"),
+    ("sample\tsex\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\tgarbage\t-0.95\tnan\n", "duplicate column(s) sex"),
+    ("sample\tsex\tX_logratio\ns.cnr\tMale\t-0.95\n", "missing column(s) Y_logratio"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\t\t-0.95\tnan\n", "is not one of Male, Female, Unknown"),
     ("sample\tX_logratio\tY_logratio\ns.cnr\t-0.95\tnan\n", "not a cnvkit.py sex table"),
     ("sample\tsex\tX_logratio\tY_logratio\n", "expected one sample row, found 0"),
     ("", "expected one sample row, found 0"),
+    # round 6 (V1): CNVkit ends every record with a newline; an unterminated last line is a truncated table, even
+    # when what is left still reads as a valid row
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-0.95\tnan", "not newline-terminated"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tFemale\t-0.9", "not newline-terminated"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-0.95\t-5.01", "not newline-terminated"),
+    ("sample\tsex\tX_logratio\tY_logratio\ns.cnr\tMale\t-0.9", "not newline-terminated"),
 ])
 @pytest.mark.parametrize("sex_arg", ["", "male", "female"])
 def test_decide_cli_rejects_malformed_table(tmp_path, body, message, sex_arg):
@@ -146,11 +162,38 @@ def test_decide_cli_rejects_malformed_table(tmp_path, body, message, sex_arg):
     assert proc.returncode == 1 and message in proc.stderr and proc.stdout == ""
 
 
-@pytest.mark.parametrize("inferred", ["garbage", "", "male", "Unknown", None])
+@pytest.mark.parametrize("inferred", ["garbage", "", "male", "unknown", None])
 def test_decide_rejects_invalid_inferred_sex(inferred):
-    with pytest.raises(ValueError, match="is not Male or Female"):
+    with pytest.raises(ValueError, match="is not one of Male, Female, Unknown"):
         port.decide("", inferred, "grch38")
     assert port.decide("male", inferred, "grch38")[0] is True     # -x given: the inference is not consulted
+
+
+# CNVkit fc65941 writes this row when the .cnr has no usable chrX bins (no chrX targets, or only PAR ones with
+# --diploid-parx-genome; checked with cnvkit.py sex in cgp-cnvkit:1.0.0): Unknown, as genemetrics' own guess (no
+# shift), so the post-step is not applied. The base (8b683c8) accepted it; the expected output below is its output.
+UNKNOWN = "sample\tsex\tX_logratio\tY_logratio\ns.cnr\tUnknown\tNA\tNA\n"
+
+
+@pytest.mark.parametrize("sex_arg, stdout", [("", "0\tno -x; cnvkit.py sex on the .cnr: Unknown\n"),
+                                             ("male", "1\t-x male\n"), ("female", "0\t-x female\n")])
+def test_decide_accepts_cnvkits_unknown_sex_as_before(tmp_path, sex_arg, stdout):
+    sex = tmp_path / "sex_cnr.tsv"
+    sex.write_text(UNKNOWN)
+    proc = run("decide", "--sex-arg", sex_arg, "--cnr-sex", sex, "--parx", "grch38")
+    assert proc.returncode == 0 and proc.stdout == stdout, proc.stderr
+
+
+@pytest.mark.parametrize("body", ["sample\tsex\tX_logratio\tY_logratio\ns.cnr\tFemale\tnan\tnan\n",
+                                  "sample\tsex\tX_logratio\tY_logratio\ns.cnr\tUnknown\t-0.95\tnan\n",
+                                  # columns in another order, or another column: not rejected (no exact header rule)
+                                  "sample\tsex\tY_logratio\tX_logratio\ns.cnr\tMale\tnan\t-0.95\n",
+                                  "sample\tsex\tX_logratio\tY_logratio\tother\ns.cnr\tMale\t-0.95\tnan\tx\n"])
+def test_decide_accepts_well_formed_tables(tmp_path, body):
+    sex = tmp_path / "sex_cnr.tsv"
+    sex.write_text(body)
+    proc = run("decide", "--sex-arg", "", "--cnr-sex", sex, "--parx", "grch38")
+    assert proc.returncode == 0, proc.stderr
 
 
 # ── compare ──────────────────────────────────────────────────────────────────

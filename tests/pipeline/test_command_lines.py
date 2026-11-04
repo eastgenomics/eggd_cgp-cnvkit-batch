@@ -351,12 +351,16 @@ def test_sex_qc_failure_is_fatal(tmp_path):
 
 @pytest.mark.parametrize("parx", [{}, PARX])
 @pytest.mark.parametrize("stub_env, message", [
-    ({"STUB_RAW_Y": "garbage"}, "Y_logratio 'garbage' is not a number"),
-    ({"STUB_RAW_Y": ""}, "Y_logratio '' is not a number"),
+    ({"STUB_RAW_Y": "garbage"}, "Y_logratio 'garbage' is not a finite number"),
+    ({"STUB_RAW_Y": ""}, "Y_logratio '' is not a finite number"),
     ({"STUB_RAW_SEX_ROW": "{sample}\tMale\t-0.971"}, "the sample row has 3 fields"),     # short row: no Y value
-    ({"STUB_RAW_SEX": "Unknown"}, "sex 'Unknown' is not one of Male, Female"),
+    ({"STUB_RAW_SEX": "unknown"}, "sex 'unknown' is not one of Male, Female, Unknown"),
+    ({"STUB_RAW_Y": "NA"}, "Y_logratio 'NA' is not a finite number"),                   # NA only with Unknown
     ({"STUB_CNR_SEX_ROW": "{sample}\tMale\t-0.945"}, "the sample row has 3 fields"),
-    ({"STUB_CNR_SEX_ROW": "{sample}\tMale\tgarbage\tnan"}, "X_logratio 'garbage' is not a number"),
+    ({"STUB_CNR_SEX_ROW": "{sample}\tMale\tgarbage\tnan"}, "X_logratio 'garbage' is not a finite number"),
+    ({"STUB_RAW_Y": "-inf"}, "Y_logratio '-inf' is not a finite number"),               # R3: not read as no chrY
+    ({"STUB_RAW_Y": "-1e999"}, "Y_logratio '-1e999' is not a finite number"),
+    ({"STUB_CNR_SEX_ROW": "{sample}\tMale\t-0.945\tinf"}, "Y_logratio 'inf' is not a finite number"),
 ])
 def test_malformed_sex_table_fails_the_job(tmp_path, parx, stub_env, message):
     # A2: malformed CNVkit sex output fails the job instead of reading as no chrY / female
@@ -366,7 +370,23 @@ def test_malformed_sex_table_fails_the_job(tmp_path, parx, stub_env, message):
     assert run.outputs == {} and run.uploads == []
 
 
-@pytest.mark.parametrize("cnr_sex", ["garbage", "male", "Unknown"])
+@pytest.mark.parametrize("parx", [{}, PARX])
+@pytest.mark.parametrize("stub_env", [
+    {"STUB_RAW_Y": "-5.01", "STUB_RAW_SEX_END": ""},         # -5.01e-05 cut short: would read as no chrY (Female)
+    {"STUB_RAW_SEX_END": ""},
+    {"STUB_CNR_SEX_END": ""},
+    {"STUB_CNR_SEX_ROW": "{sample}\tMale\t-0.9", "STUB_CNR_SEX_END": ""},    # -0.945 cut short
+])
+def test_truncated_sex_table_fails_the_job(tmp_path, parx, stub_env):
+    # round 6 (V1): CNVkit ends every record with a newline; a table whose last line is unterminated is truncated,
+    # and fails the job (the .cnr table in the PAR decision with grch38, else in the sex QC), not the QC alone
+    run = run_app(tmp_path, parx, stub_env=stub_env)
+    assert run.returncode != 0
+    assert "the last line is not newline-terminated (a truncated table)" in run.stderr
+    assert run.outputs == {} and run.uploads == []
+
+
+@pytest.mark.parametrize("cnr_sex", ["garbage", "male", "unknown"])
 def test_invalid_inferred_sex_fails_the_parfix_decision(tmp_path, cnr_sex):
     # A2: an invalid .cnr sex call must not read as "not Male" and skip the PAR post-step
     from apprun import default_inputs
@@ -374,9 +394,30 @@ def test_invalid_inferred_sex_fails_the_parfix_decision(tmp_path, cnr_sex):
     inputs.update(PARX)
     run = run_app(tmp_path, inputs, names, stub_env={"STUB_CNR_SEX": cnr_sex})
     assert run.returncode != 0
-    assert "cnvkit_parfix.py decide: FAILED" in run.stderr and f"sex {cnr_sex!r} is not Male or Female" in run.stderr
+    assert "cnvkit_parfix.py decide: FAILED" in run.stderr and f"sex {cnr_sex!r} is not one of Male, Female, Unknown" in run.stderr
     assert "[parfix] not applied" not in run.stdout
     assert run.outputs == {}
+
+
+@pytest.mark.parametrize("parx", [{}, PARX])
+def test_cnvkit_unknown_sex_completes_as_before(tmp_path, parx):
+    # CNVkit writes `Unknown NA NA` when the sample has no usable chrX bins (no chrX targets, or only PAR ones with
+    # --diploid-parx-genome); the base accepted it, so the job completes as before: no post-step (genemetrics'
+    # own guess is no shift), chrY absent (NA reads as NaN)
+    from apprun import default_inputs
+    inputs, names = default_inputs(sample_id=U_SAMPLE)
+    inputs.update(parx)
+    unknown = {"STUB_RAW_SEX_ROW": "{sample}\tUnknown\tNA\tNA", "STUB_CNR_SEX_ROW": "{sample}\tUnknown\tNA\tNA"}
+    run = run_app(tmp_path, inputs, names, stub_env=unknown)
+    assert run.returncode == 0, run.stderr
+    note = "no -x; cnvkit.py sex on the .cnr: Unknown" if parx else "no --diploid-parx-genome"
+    assert f"[parfix] not applied: {note}" in run.stdout
+    row = sex_qc_row(run, U_SAMPLE)
+    assert {k: row[k] for k in ("applied_sex", "raw_Y_logratio", "chrY_present", "chrY_sex", "raw_cnvkit_sex",
+                                "cnr_X_logratio", "cnr_cnvkit_sex", "sex_mismatch", "par_fix_applied")} == {
+        "applied_sex": "cnvkit_inferred(Unknown)", "raw_Y_logratio": "NA", "chrY_present": "0", "chrY_sex": "Female",
+        "raw_cnvkit_sex": "Unknown", "cnr_X_logratio": "NA", "cnr_cnvkit_sex": "Unknown", "sex_mismatch": "NA",
+        "par_fix_applied": "0"}
 
 
 @pytest.mark.parametrize("sample", ["patient__01", "sample.cnr", "sample.cnn", "x.targetcoverage.cnn"])

@@ -12,6 +12,7 @@ Environment:
   STUB_RAW_SEX, STUB_RAW_Y   `cnvkit.py sex` on a .targetcoverage.cnn: sex call and Y log-ratio (Male, -1.13)
   STUB_CNR_SEX               `cnvkit.py sex` on a .cnr: sex call (Male)
   STUB_RAW_SEX_ROW, STUB_CNR_SEX_ROW  the whole data row of that table instead ({sample} = the input file name)
+  STUB_RAW_SEX_END, STUB_CNR_SEX_END  what ends that row (a newline, as CNVkit writes it; '' = a truncated table)
   STUB_OUTPUT_<SUBCOMMAND>   a file copied as that subcommand's output instead of the placeholder
   STUB_OUTPUT_<SUBCOMMAND>_<DIR>  the same, only when run in the mounted directory named <dir> (e.g. PARFIX)
 """
@@ -94,11 +95,13 @@ elif sub == "sex" and out:
     if sample.endswith(".cnr"):
         row = f"{sample}\t{os.environ.get('STUB_CNR_SEX', 'Male')}\t-0.945\tnan"
         row = os.environ.get("STUB_CNR_SEX_ROW", row).replace("{sample}", sample)
+        end = os.environ.get("STUB_CNR_SEX_END", "\n")
     else:
         row = f"{sample}\t{os.environ.get('STUB_RAW_SEX', 'Male')}\t-0.971\t{os.environ.get('STUB_RAW_Y', '-1.13')}"
         row = os.environ.get("STUB_RAW_SEX_ROW", row).replace("{sample}", sample)
+        end = os.environ.get("STUB_RAW_SEX_END", "\n")
     with open(os.path.join(host, out), "w") as fh:
-        fh.write(OUTPUT["sex"][0] + "\n" + row + "\n")
+        fh.write(OUTPUT["sex"][0] + "\n" + row + end)
 elif out:
     header, rows = OUTPUT.get(sub, ("placeholder", []))
     with open(os.path.join(host, out), "w") as fh:

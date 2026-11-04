@@ -5,8 +5,8 @@ Source: `analysis/pon_comparison/scripts/genemetrics_parfix.py` at commit f933f7
 (project-JF3p1f04Yggp0vf3PYjy7Q0F:file-JF6PpjQ4Yggx4JxXFkQqZxGb, md5 51ada0e597420655c89c86e1a2e13ea6). The batch
 driver (plans, arm directories, the in-image worker and the hard-coded work directory) is replaced by three per-sample
 subcommands; `par_state`, `shift_par`, the male decision and the `compare` checks are copied unchanged, except that the
-app fails where the validation only logged: a malformed .cnr sex table or a sex call other than Male / Female is an
-error, and so is par_check 0, now also when a span does not explain the PAR row it would excuse (step 4; on the 60
+app fails where the validation only logged: a malformed .cnr sex table is an error, and so is par_check 0, now also
+when a span does not explain the PAR row it would excuse (step 4; on the 60
 validated males every par_check is unchanged). The app runs
 genemetrics in the image between `shift` and `compare` with the original arguments, as the validation did.
 Validation: FINAL_RESULTS.md (project-JF3p1f04Yggp0vf3PYjy7Q0F:file-JF6YBbj4YggvFK194V51V7pX) and DI-4118 (non-UMI).
@@ -30,7 +30,7 @@ diploid in a male, so every PAR gene (on this panel: CRLF2) is reported 1.0 too 
 
 Usage
   cnvkit_parfix.py decide  --sex-arg male|female|'' --cnr-sex <sex_cnr.tsv> --parx grch38|''
-      prints "<1|0>\t<reason>"; exit 1 if the table is malformed or its sex call is not Male / Female
+      prints "<1|0>\t<reason>"; exit 1 if the sex table is malformed (cnr_sex)
   cnvkit_parfix.py shift   <s.cnr> <s.call.cns> <outdir>
       writes <outdir>/<s.cnr>, <outdir>/<s.call.cns>; prints "par_bins=N span_bins=N par_segs=N span_segs=N"
   cnvkit_parfix.py compare <original.genemetrics.tsv> <new.genemetrics.tsv> <s.call.cns>
@@ -40,7 +40,10 @@ Usage
 import argparse
 import collections
 import csv
+import io
+import math
 import os
+import re
 import sys
 
 PARS = [(10000, 2781479), (155701382, 156030895)]   # GRCh38 chrX PAR1, PAR2; 0-based half-open
@@ -76,22 +79,47 @@ def shift_par(src, dst, start_col, log2_col):
     return n_in, n_span
 
 
+SEX_COLUMNS = ('sample', 'sex', 'X_logratio', 'Y_logratio')
+SEX_VALUES = ('Male', 'Female', 'Unknown')     # CNVkit fc65941 commands.do_sex; Unknown: no usable chrX bins
+NUMBER = re.compile(r'[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?')   # finite; CNVkit's literals nan and NA aside
+
+
+def is_logratio(x, sex):
+    """A `cnvkit.py sex` log-ratio: a finite number, CNVkit's literal nan (no usable bins on that chromosome) or NA
+    (no statistics: written with an Unknown call). inf and overflow such as -1e999 are not."""
+    return (x == 'nan' or (x == 'NA' and sex == 'Unknown')
+            or (NUMBER.fullmatch(x) is not None and math.isfinite(float(x))))
+
+
 def cnr_sex(path):
-    """The `sex` call from a one-sample `cnvkit.py sex` table: Male or Female (anything else is malformed and raises
-    ValueError, so a bad table cannot silently skip the post-step)."""
+    """The `sex` call from a one-sample `cnvkit.py sex` table, validated as in cnvkit_sex_qc.py (port addition): every
+    required column, each once, and a value for each; a sex call CNVkit writes (Male, Female or Unknown); finite
+    numeric log-ratios or CNVkit's nan / NA; a newline at the end of the last line, as CNVkit writes it. Anything else
+    is malformed and raises ValueError, so a bad or truncated table cannot silently skip the post-step."""
     with open(path, newline='') as fh:
-        rows = [r for r in csv.reader(fh, delimiter='\t') if r]
+        text = fh.read()
+    rows = [r for r in csv.reader(io.StringIO(text), delimiter='\t') if r]
     if len(rows) != 2:
         raise ValueError(f'{path}: expected one sample row, found {max(len(rows) - 1, 0)}')
+    if not text.endswith('\n'):    # a truncated last value can still be a number
+        raise ValueError(f'{path}: the last line is not newline-terminated (a truncated table)')
     header, row = rows
-    if 'sex' not in header or 'sample' not in header:
-        raise ValueError(f'{path}: not a cnvkit.py sex table (columns: {", ".join(header)})')
+    dup = sorted({c for c in header if header.count(c) > 1})
+    if dup:
+        raise ValueError(f'{path}: duplicate column(s) {", ".join(dup)}')
+    missing = [c for c in SEX_COLUMNS if c not in header]
+    if missing:
+        raise ValueError(f'{path}: not a cnvkit.py sex table: missing column(s) {", ".join(missing)}')
     if len(row) != len(header):
         raise ValueError(f'{path}: the sample row has {len(row)} fields, the header {len(header)}')
-    sex = row[header.index('sex')]
-    if sex not in ('Male', 'Female'):
-        raise ValueError(f'{path}: sex {sex!r} is not Male or Female')
-    return sex
+    r = dict(zip(header, row, strict=True))
+    if r['sex'] not in SEX_VALUES:
+        raise ValueError(f"{path}: sex {r['sex']!r} is not one of {', '.join(SEX_VALUES)}")
+    for c in ('X_logratio', 'Y_logratio'):
+        if not is_logratio(r[c], r['sex']):
+            raise ValueError(f"{path}: {c} {r[c]!r} is not a finite number (or CNVkit's literal nan, or NA with an "
+                             "Unknown call)")
+    return r['sex']
 
 
 def decide(sex_arg, inferred, parx):
@@ -104,8 +132,8 @@ def decide(sex_arg, inferred, parx):
         return True, '-x male'
     if sex_arg == 'female':
         return False, '-x female'
-    if inferred not in ('Male', 'Female'):
-        raise ValueError(f'cnvkit.py sex on the .cnr: {inferred!r} is not Male or Female')
+    if inferred not in SEX_VALUES:
+        raise ValueError(f'cnvkit.py sex on the .cnr: {inferred!r} is not one of {", ".join(SEX_VALUES)}')
     if inferred == 'Male':
         return True, 'no -x; cnvkit.py sex on the .cnr: Male'
     return False, f'no -x; cnvkit.py sex on the .cnr: {inferred}'

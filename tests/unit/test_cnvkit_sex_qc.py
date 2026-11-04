@@ -152,18 +152,33 @@ MALFORMED = [
     ("{f}\tMale\t-0.97\n", "the sample row has 3 fields"),           # short row: Y value missing
     ("{f}\tMale\n", "the sample row has 2 fields"),
     ("{f}\tMale\t-0.97\t-1.1\textra\n", "the sample row has 5 fields"),
-    ("{f}\tMale\t-0.97\tgarbage\n", "Y_logratio 'garbage' is not a number"),
-    ("{f}\tMale\t-0.97\t\n", "Y_logratio '' is not a number"),
-    ("{f}\tMale\t-0.97\tNA\n", "Y_logratio 'NA' is not a number"),
-    ("{f}\tMale\t-0.97\tNaN\n", "Y_logratio 'NaN' is not a number"),
-    ("{f}\tMale\t-0.97\t 1.0\n", "Y_logratio ' 1.0' is not a number"),
-    ("{f}\tMale\tgarbage\t-1.1\n", "X_logratio 'garbage' is not a number"),
+    ("{f}\tMale\t-0.97\tgarbage\n", "Y_logratio 'garbage' is not a finite number"),
+    ("{f}\tMale\t-0.97\t\n", "Y_logratio '' is not a finite number"),
+    ("{f}\tMale\t-0.97\tNA\n", "Y_logratio 'NA' is not a finite number"),
+    ("{f}\tMale\t-0.97\tNaN\n", "Y_logratio 'NaN' is not a finite number"),
+    ("{f}\tMale\t-0.97\t 1.0\n", "Y_logratio ' 1.0' is not a finite number"),
+    ("{f}\tMale\tgarbage\t-1.1\n", "X_logratio 'garbage' is not a finite number"),
+    # R3: infinities and overflow are not numbers CNVkit writes; they would otherwise read as no chrY / chrY present
+    ("{f}\tMale\t-0.97\t-inf\n", "Y_logratio '-inf' is not a finite number"),
+    ("{f}\tMale\t-0.97\tinf\n", "Y_logratio 'inf' is not a finite number"),
+    ("{f}\tMale\t-0.97\t+inf\n", "Y_logratio '+inf' is not a finite number"),
+    ("{f}\tMale\t-0.97\t-1e999\n", "Y_logratio '-1e999' is not a finite number"),
+    ("{f}\tMale\t-0.97\t1e400\n", "Y_logratio '1e400' is not a finite number"),
+    ("{f}\tMale\t-inf\t-1.1\n", "X_logratio '-inf' is not a finite number"),
+    ("{f}\tMale\t-0.97\tInfinity\n", "Y_logratio 'Infinity' is not a finite number"),
     ("{f}\tgarbage\t-0.97\t-1.1\n", "sex 'garbage' is not one of Male, Female"),
     ("{f}\tmale\t-0.97\t-1.1\n", "sex 'male' is not one of Male, Female"),
-    ("{f}\tUnknown\tNA\tNA\n", "sex 'Unknown' is not one of Male, Female"),
+    ("{f}\tunknown\tNA\tNA\n", "sex 'unknown' is not one of Male, Female, Unknown"),
+    ("{f}\tFemale\tNA\tNA\n", "X_logratio 'NA' is not a finite number"),      # NA only with CNVkit's Unknown
     ("", "expected one sample row, found 0"),                       # header only
     ("{f}\tMale\t-0.97\t-1.1\n{f}\tMale\t-0.97\t-1.1\n", "expected one sample row, found 2"),
     (None, "empty table"),
+    # round 6 (V1): CNVkit ends every record with a newline; an unterminated last line is truncated, even when what
+    # is left still reads as a valid row (-5.01e-05 cut to -5.01 would turn chrY present into Female)
+    ("{f}\tMale\t-0.97\t-5.01", "the last line is not newline-terminated"),
+    ("{f}\tMale\t-0.97\tnan", "the last line is not newline-terminated"),
+    ("{f}\tFemale\t-0.9", "the last line is not newline-terminated"),
+    ("{f}\tMale\t-0.97\t-1.13\n{f}\tMale\t-0.97", "the last line is not newline-terminated"),
 ]
 
 
@@ -197,12 +212,47 @@ def test_qc_rejects_missing_column(tmp_path, table):
     assert p.returncode == 2 and "missing column(s) Y_logratio" in p.stderr
 
 
+@pytest.mark.parametrize("table", ["raw", "cnr"])
+@pytest.mark.parametrize("header, row", [
+    # a later duplicate would conceal an invalid first value, or the reverse
+    ("sample\tsex\tX_logratio\tY_logratio\tY_logratio", "{f}\tMale\t-0.97\tgarbage\t-1.1"),
+    ("sample\tsex\tX_logratio\tY_logratio\tY_logratio", "{f}\tMale\t-0.97\t-1.1\tgarbage"),
+    ("sample\tsex\tsex\tX_logratio\tY_logratio", "{f}\tgarbage\tMale\t-0.97\t-1.1"),
+    ("sample\tsample\tsex\tX_logratio\tY_logratio", "other\t{f}\tMale\t-0.97\t-1.1"),
+])
+def test_qc_rejects_duplicate_columns(tmp_path, table, header, row):
+    good = {"raw": HDR + f"{U}.targetcoverage.cnn\tMale\t-0.97\t-1.13\n", "cnr": HDR + f"{U}.cnr\tMale\t-0.94\tnan\n"}
+    f = f"{U}.targetcoverage.cnn" if table == "raw" else f"{U}.cnr"
+    good[table] = header + "\n" + row.format(f=f) + "\n"
+    p = qc_tables(tmp_path, U, good["raw"], good["cnr"])
+    assert p.returncode == 2 and "duplicate column(s)" in p.stderr
+    assert not (tmp_path / "s.sex_qc.tsv").exists()
+
+
 def test_qc_cnr_nan_x_is_accepted(tmp_path):
     # CNVkit's literal nan is a supported value in either log-ratio column (policy: no usable bins)
     p = qc_tables(tmp_path, U, HDR + f"{U}.targetcoverage.cnn\tFemale\t-0.97\tnan\n", HDR + f"{U}.cnr\tFemale\tnan\tnan\n")
     assert p.returncode == 0, p.stderr
     r = row(tmp_path / "s.sex_qc.tsv")
     assert (r["raw_Y_logratio"], r["chrY_present"], r["chrY_sex"], r["cnr_X_logratio"]) == ("nan", "0", "Female", "nan")
+
+
+# CNVkit fc65941 (commands.do_sex) writes this row when the sample has no usable chrX bins: no chrX targets, or
+# only PAR ones with --diploid-parx-genome (checked with cnvkit.py sex in cgp-cnvkit:1.0.0). The base accepted it,
+# reading NA as NaN; the expected bytes below are the base's (8b683c8) output for these tables.
+UNKNOWN_SEX_QC = ("run\tsample\tlims_sex\tapplied_sex\tapplied_source\traw_Y_logratio\tchrY_present\tchrY_sex\t"
+                  "raw_X_logratio\traw_cnvkit_sex\tcnr_X_logratio\tcnr_cnvkit_sex\tsex_mismatch\tpar_fix_applied\t"
+                  "par_span_segments\tdropout_probes\n"
+                  f"\t{U}\tU\tcnvkit_inferred(Unknown)\tcnvkit_inference\tNA\t0\tFemale\tNA\tUnknown\tNA\tUnknown\tNA\t"
+                  "0\t0\t0\n")
+UNKNOWN_MQC_ROW = f"{U}\tU\tFemale\tNA\tNA\tNA\tNA\tcnvkit_inferred(Unknown)\t0\n"
+
+
+def test_qc_cnvkit_unknown_sex_is_accepted_as_before(tmp_path):
+    p = qc_tables(tmp_path, U, HDR + f"{U}.targetcoverage.cnn\tUnknown\tNA\tNA\n", HDR + f"{U}.cnr\tUnknown\tNA\tNA\n")
+    assert p.returncode == 0, p.stderr
+    assert (tmp_path / "s.sex_qc.tsv").read_text() == UNKNOWN_SEX_QC
+    assert (tmp_path / "s.sex_check_mqc.tsv").read_text().splitlines(keepends=True)[-1] == UNKNOWN_MQC_ROW
 
 
 # ── sample IDs are matched whole (A3) ────────────────────────────────────────
@@ -255,6 +305,8 @@ def test_matches_reference(tmp_path, sample, raw_y, raw_x, raw_sex, cnr_sex):
             "--out", tmp_path / "port", "--run", run_name)
     assert p.returncode == 0, p.stderr
     ref, mine = row(tmp_path / "ref.sex_qc.tsv"), row(tmp_path / "port.sex_qc.tsv")
+    # round 7: every sex_check.py column, in its order, then the port's added ones (none compared by omission)
+    assert list(mine) == list(ref) + ["par_fix_applied", "par_span_segments", "dropout_probes"]
     # D8: applied_sex / applied_source come from the app's resolution; every other sex_check.py column is unchanged
     assert {k: v for k, v in mine.items() if k in ref and k not in ("applied_sex", "applied_source")} == \
            {k: v for k, v in ref.items() if k not in ("applied_sex", "applied_source")}
