@@ -396,7 +396,8 @@ def compare(orig, new, call_cns):
     rec['par_after'] = ';'.join(sorted({f"{l.split(chr(9))[0]}:{l.split(chr(9))[4]}" for l in p1}))
     # Each PAR row is judged against its own segment (par_row_verdicts). par_check is 0 when any row is unexplained,
     # 'span' when a row is spanned, or a spanning segment is present and the PAR rows are unchanged (the
-    # validation's label: on the 60 validated treated males per set every label is unchanged), and 1 otherwise.
+    # validation's label: on the 60 validated treated males per set every label is unchanged), 'bins' with no
+    # call.cns segments (bin_row_verdicts), and 1 otherwise.
     names = (h0 if r0 else h1).rstrip('\n').split('\t')   # the rows' header (the other may be the empty one)
     segs = seg_lookup(call_cns, names)
     if not segs:   # no segments: genemetrics reported per-gene bin means (bin_row_verdicts); a reduced check
