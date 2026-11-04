@@ -30,8 +30,8 @@ diploid in a male, so every PAR gene (on this panel: CRLF2) is reported 1.0 too 
              each at a level genemetrics reports (|level| >= 0.3), matched to its before-row by gene, coordinates
              and every field but log2; a row of a segment the shift left unchanged (one spanning a PAR boundary)
              must be unchanged and equal L + 1.0 (par_check span; the gene@segment is printed as span_genes). With
-             overlapping segments (overlapping targets) a row is explained when any segment it overlaps explains
-             it, as genemetrics reports a gene once per segment it overlaps. Anything else is an unexplained PAR
+             overlapping segments (overlapping targets) a row is explained when any segment it overlaps or lies
+             in explains it (row_segments), as genemetrics reports a gene once per segment it overlaps. Anything else is an unexplained PAR
              discrepancy (par_check 0): exit 1, and the app publishes no outputs. 'Equal' means CNVkit's %.6g
              print of that value, within half a unit in the 6th significant digit at its magnitude (prints_as).
 
@@ -243,11 +243,12 @@ def may_be_unreported(x):
 
 
 def row_segments(segs, s, e):
-    """The chrX call.cns segments (start, end, log2) a genemetrics row [s, e) can come from: those it overlaps.
-    genemetrics reports a gene once per segment whose range overlaps the gene's bins (by_ranges, mode 'outer'), so
-    with non-overlapping segments this is the one segment that contains the row; with overlapping segments
-    (overlapping targets) it can be several, and a row may extend past the segment it comes from."""
-    return [x for x in segs['chrX'] if x[0] < e and s < x[1]]
+    """The chrX call.cns segments (start, end, log2) a genemetrics row [s, e) can come from: those it overlaps, and
+    those that contain it (the base's lookup; this also covers a zero-length row at a segment's start). genemetrics
+    reports a gene once per segment whose range overlaps the gene's bins (by_ranges, mode 'outer'), so with
+    non-overlapping segments this is the one segment that contains the row; with overlapping segments (overlapping
+    targets) it can be several, and a row may extend past the segment it comes from."""
+    return [x for x in segs['chrX'] if (x[0] < e and s < x[1]) or (x[0] <= s and e <= x[1])]
 
 
 def shifted(seg):

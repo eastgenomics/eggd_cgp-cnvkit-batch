@@ -724,6 +724,22 @@ def test_row_segments():
     assert port.row_segments(segs, 1000, 2000) == []
     # half-open: a segment ending where the row starts does not overlap it
     assert port.row_segments({"chrX": [(1000, 1190891, 0.5)]}, 1190891, 1212654) == []
+    # every segment the base's lookup finds (containment) is a candidate, a zero-length row at a segment start too
+    zero = {"chrX": [(1190891, 1212654, 0.5), (1000, 1190891, 0.4)]}
+    assert port.row_segments(zero, 1190891, 1190891) == zero["chrX"]
+    assert [x for x in zero["chrX"] if x[0] <= 1190891 and 1190891 <= x[1]] == zero["chrX"]
+
+
+def test_compare_zero_length_par_row_as_the_base(tmp_path):
+    # a zero-length row at its segment's start: the base (containment) explains it, so must the port
+    cns = cns_rows(tmp_path, (1190891, 2781479, "0.5"))
+    row = "CRLF2\tchrX\t1190891\t1190891\t{}\t679\t7.2\t3\t8\t7.2\t8\n"
+    o = gm(tmp_path, "s.genemetrics.noparfix.tsv", NONPAR, row.format("1.5"))
+    n = gm(tmp_path, "s.genemetrics.tsv", NONPAR, row.format("0.5"))
+    (tmp_path / "s.cnr").write_text(CNR_H)
+    mine = port.compare(o, n, cns)
+    theirs = ref.compare(dict(action="dry", rundir=str(tmp_path), sample="s", orig=str(o), new=str(n)))
+    assert mine["par_check"] == theirs["par_check"] == 1 and {k: theirs[k] for k in mine} == mine
 
 
 # the minimum the comparison needs to read a genemetrics table (round 3, S3): a header naming the columns it reads,

@@ -80,8 +80,8 @@ accepted as corrected. Anything else is an unexplained PAR discrepancy (`par_che
 printing every value to 6 significant digits (`%.6g`): the difference may be up to half a unit in the 6th digit at
 the value's magnitude (a segment at 9.99996 gives 10.99996 before the fix, printed as `11`). CNVkit writes
 overlapping segments for overlapping targets, and `genemetrics` reports a gene once for each segment that overlaps
-its bins, at that segment's log2; a PAR row is therefore explained when any segment it overlaps explains it (with
-non-overlapping segments, that is the one segment containing it). `compare` reads the two genemetrics tables with
+its bins, at that segment's log2; a PAR row is therefore explained when any segment it overlaps or lies in explains
+it (with non-overlapping segments, that is the one segment containing it). `compare` reads the two genemetrics tables with
 only the checks it needs to compare them: identical headers starting `gene chromosome start end log2` (CNVkit's
 header-only table, when no gene is reported, may stand on either side), one field per column, integer coordinates
 and a numeric log2; an empty or truncated table fails. The job fails, with no outputs, on such a table, when non-PAR
