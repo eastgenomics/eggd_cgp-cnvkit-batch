@@ -172,7 +172,8 @@ def read_genemetrics(path):
     """(header line, row lines) of a genemetrics table, with only the checks compare needs to read it (port
     addition): a header whose first columns are gene, chromosome, start, end and log2, and rows with one field per
     header column, integer start and end and a numeric log2. An empty file (no header) raises ValueError, and so
-    does any other header or row, so a truncated table cannot pass the comparison."""
+    does any other header or row. This detects only those structural errors: a truncated table whose last row still
+    has one field per column and parseable start, end and log2 (it need not end in a newline) is not detected."""
     with open(path) as f:
         hdr = f.readline()
         rows = list(f)

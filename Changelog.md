@@ -35,7 +35,8 @@ Runs the validated Atlas CGP configuration (`D_gcclip_on_s2` with the dropout ma
   `genemetrics` reports a gene once per segment. With no `call.cns` segments (`genemetrics` then reports per-gene bin
   means), the PAR rows are not checked: the job warns (`par_check=bins`) and publishes, as before. `compare` reads the two genemetrics tables with only the checks it needs (identical headers starting
   `gene chromosome start end log2`, CNVkit's header-only empty table aside; one field per column; integer
-  coordinates; a numeric log2), so an empty or truncated table fails the job
+  coordinates; a numeric log2), so an empty table, or one truncated so that a row breaks these checks, fails the job;
+  a truncation that leaves well-formed fields is not necessarily detected
 - Sex QC, `cnvkit_sex_qc.py` (port of `sex_check.py` @ `31a62fc`) (DI-4103). A malformed `cnvkit.py sex` table (a
   missing or duplicated column, a missing value, a log-ratio that is not a finite number or one of CNVkit's literals
   `nan` and, with an `Unknown` call, `NA`; a sex call other than `Male`, `Female` or `Unknown`; a truncated table

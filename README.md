@@ -89,7 +89,9 @@ them against): the job warns (`par_check=bins`) and publishes the outputs, as be
 and non-PAR rows are still checked. `compare` reads the two genemetrics tables with
 only the checks it needs to compare them: identical headers starting `gene chromosome start end log2` (CNVkit's
 header-only table, when no gene is reported, may stand on either side), one field per column, integer coordinates
-and a numeric log2; an empty or truncated table fails. The job fails, with no outputs, on such a table, when non-PAR
+and a numeric log2; an empty table fails, and so does one truncated so that a row breaks these checks. A truncation
+that leaves well-formed fields (a last row cut inside its last field, leaving no newline) is not necessarily
+detected. The job fails, with no outputs, on such a table, when non-PAR
 rows differ or when `par_check` is 0. The corrected read-out is `genemetrics`; the uncorrected one is always written
 as `genemetrics_noparfix`. Without `diploid_parx_genome` no post-step runs.
 
@@ -193,8 +195,10 @@ All samples can run in parallel (one job per sample).
   male CRLF2 call.
 - **PAR check with overlapping segments:** `compare` attributes a PAR gene row to every segment that overlaps it and
   carries the row's probes, weight and (where copied) `cn`. It does not read the `.cnr` bins, so it cannot tell which
-  of two such overlapping segments produced the row: a row wrongly left at +1 could be accepted as `span`. This
-  needs overlapping targets (none in the Atlas panel); exact bin-level attribution is deferred
+  of two such overlapping segments produced the row, and can err in both directions: a row wrongly left at +1 could be
+  accepted as `span`; and valid output with overlapping segments near the 0.3 threshold can leave a row unexplained,
+  failing the job (`par_check=0`, no outputs), a safe failure where the base warned and published. This needs
+  overlapping targets (none in the Atlas panel); exact bin-level attribution is deferred
   ([#5](https://github.com/eastgenomics/eggd_cgp-cnvkit-batch/issues/5)).
 - **Dropout mask:** a real 1–2-probe event that meets the rule (log2 < −3, < 10 reads) is masked from segmentation; it
   is listed in `dropout_qc`. **FGFR3 probe 1** is a capture dropout that the mask does not remove at non-UMI depth
