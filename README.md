@@ -191,6 +191,11 @@ All samples can run in parallel (one job per sample).
 - **CRLF2 in males:** when CBS merges the PAR1 bins into a segment that continues into non-PAR chrX, the PAR
   post-step leaves it unchanged, and the PAR gene keeps the +1 shift (`par_span_segments` > 0, logged). Review every
   male CRLF2 call.
+- **PAR check with overlapping segments:** `compare` attributes a PAR gene row to every segment that overlaps it and
+  carries the row's probes, weight and (where copied) `cn`. It does not read the `.cnr` bins, so it cannot tell which
+  of two such overlapping segments produced the row: a row wrongly left at +1 could be accepted as `span`. This
+  needs overlapping targets (none in the Atlas panel); exact bin-level attribution is deferred
+  ([#5](https://github.com/eastgenomics/eggd_cgp-cnvkit-batch/issues/5)).
 - **Dropout mask:** a real 1–2-probe event that meets the rule (log2 < −3, < 10 reads) is masked from segmentation; it
   is listed in `dropout_qc`. **FGFR3 probe 1** is a capture dropout that the mask does not remove at non-UMI depth
   (10 of 11 affected specimens have 11–30 raw reads), so FGFR3 loss calls from short segments need review.
