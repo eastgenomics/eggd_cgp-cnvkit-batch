@@ -35,6 +35,9 @@ diploid in a male, so every PAR gene (on this panel: CRLF2) is reported 1.0 too 
              (row_segments), as genemetrics reports a gene once per segment it overlaps. Anything else is an unexplained PAR
              discrepancy (par_check 0): exit 1, and the app publishes no outputs. 'Equal' means CNVkit's %.6g
              print of that value, within half a unit in the 6th significant digit at its magnitude (prints_as).
+             A header-only call.cns (no segments) makes genemetrics report per-gene bin means: each PAR row wholly
+             inside a PAR is then checked only for the -1.0 correction against its row before the fix
+             (bin_row_verdicts; par_check bins, which pipeline.sh reports as a warning).
 
 Usage
   cnvkit_parfix.py decide  --sex-arg male|female|'' --cnr-sex <sex_cnr.tsv> --parx grch38|''
@@ -343,6 +346,32 @@ def par_row_verdicts(p0, p1, segs):
     return spanned, unexplained
 
 
+def bin_row_verdicts(p0, p1):
+    """Port addition (F2): with a header-only call.cns, genemetrics reports each gene's weighted bin mean instead
+    (CNVkit fc65941 do_genemetrics: `if segments:` is False for no segments, so gene_metrics_by_gene), and there is
+    no segment to judge a row against. A row wholly inside a PAR has every bin shifted, so its mean is shifted by
+    exactly 1.0: present on both sides (matched by every field but log2), the row after the fix must be the row before
+    it less 1.0; present only before, its level less 1.0 must be below 0.3; present only after, its level plus 1.0
+    must be. Each 'must' allows the %.6g print of both values. A row spanning a PAR boundary mixes shifted and
+    unshifted bins and is not attributable (not checked). Returns [gene@coordinates unexplained]."""
+    rows = lambda p: {without_log2(l.split('\t')): float(l.split('\t')[4]) for l in p}
+    before, after = rows(p0), rows(p1)
+    unexplained = []
+    for k in list(before) + [k for k in after if k not in before]:
+        if par_state(k[1], int(k[2]), int(k[3])) != 'in':
+            continue
+        v0, v1 = before.get(k), after.get(k)
+        if v0 is None:
+            ok = abs(v1 + MALE_SHIFT) < GM_THRESHOLD + printed_tol(v1)
+        elif v1 is None:
+            ok = abs(v0 - MALE_SHIFT) < GM_THRESHOLD + printed_tol(v0)
+        else:
+            ok = abs(v1 - (v0 - MALE_SHIFT)) <= printed_tol(v0) + printed_tol(v1)
+        if not ok:
+            unexplained.append(f'{k[0]}@chrX:{k[2]}-{k[3]}')
+    return unexplained
+
+
 def compare(orig, new, call_cns):
     """genemetrics_parfix.compare for one sample; returns the statistics (raises CheckFailed when the headers or the
     non-PAR rows differ, and ValueError when a genemetrics table cannot be read)."""
@@ -369,10 +398,16 @@ def compare(orig, new, call_cns):
     # 'span' when a row is spanned, or a spanning segment is present and the PAR rows are unchanged (the
     # validation's label: on the 60 validated treated males per set every label is unchanged), and 1 otherwise.
     names = (h0 if r0 else h1).rstrip('\n').split('\t')   # the rows' header (the other may be the empty one)
-    spanned, unexplained = par_row_verdicts(p0, p1, seg_lookup(call_cns, names))
+    segs = seg_lookup(call_cns, names)
+    if not segs:   # no segments: genemetrics reported per-gene bin means (bin_row_verdicts); a reduced check
+        spanned, unexplained = [], bin_row_verdicts(p0, p1)
+    else:
+        spanned, unexplained = par_row_verdicts(p0, p1, segs)
     if unexplained:
         rec['unexplained'] = ';'.join(unexplained)
         rec['par_check'] = 0
+    elif not segs:
+        rec['par_check'] = 'bins'
     elif spanned or (rec['span_segs'] and p0 == p1):
         rec['span_genes'] = ';'.join(spanned) or '-'
         rec['par_check'] = 'span'
