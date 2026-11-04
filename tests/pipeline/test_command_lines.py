@@ -325,7 +325,7 @@ def test_parfix_span_row_equal_to_the_unshifted_segment_fails_the_job(tmp_path):
 
 def test_parfix_missing_row_not_excused_by_the_same_gene_elsewhere(tmp_path):
     # round 3 (S2): CRLF2 (segment 0.5, so reported after the fix) is missing; a CRLF2 row in PAR2 does not excuse it
-    other = "CRLF2\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t6\t9\n"
+    other = "CRLF2\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t7.2\t8\n"
     env = parfix_fixtures(tmp_path, parfix_rows=(TP53, other))
     (tmp_path / "gm.tsv").write_text(GM_H + TP53 + CRLF2.replace("1.26805", "1.5"))
     (tmp_path / "call.cns").write_text(CALL_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n"
@@ -335,6 +335,23 @@ def test_parfix_missing_row_not_excused_by_the_same_gene_elsewhere(tmp_path):
     assert run.returncode != 0
     assert "FAILED: par_check 0" in run.stderr and "CRLF2@chrX:1190891-1212654 (dropped)" in run.stderr
     assert run.outputs == {} and run.uploads == []
+
+
+def test_parfix_without_segments_warns_and_publishes(tmp_path):
+    # F2 (round 2): a header-only call.cns (an empty segmentation of all-low-coverage bins) makes genemetrics report
+    # per-gene bin means; the corrected row (-9 -> -10, cgp-cnvkit:1.0.0's output) is published, as by the base,
+    # with a warning that the PAR rows had the reduced check (par_check bins)
+    h = "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tprobes\n"
+    row = "CRLF2\tchrX\t1190891\t1192091\t{}\t0\t3\t6\n"
+    env = parfix_fixtures(tmp_path)
+    (tmp_path / "gm.tsv").write_text(h + row.format("-9"))
+    (tmp_path / "gm_parfix.tsv").write_text(h + row.format("-10"))
+    (tmp_path / "call.cns").write_text("chromosome\tstart\tend\tgene\tlog2\tcn\tdepth\tweight\n")
+    run = run_app(tmp_path, PARX, stub_env=env)
+    assert run.returncode == 0, run.stderr
+    assert "par_check=bins" in run.stdout and "[parfix] WARNING: the call.cns has no segments" in run.stdout
+    assert (run.workdir / f"{S}.genemetrics.tsv").read_text() == h + row.format("-10")
+    assert set(run.outputs) == set(ALL_OUTPUTS)
 
 
 @pytest.mark.parametrize("seg_end, parfix_row, message", [

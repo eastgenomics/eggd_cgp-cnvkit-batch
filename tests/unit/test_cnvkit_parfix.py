@@ -770,6 +770,61 @@ def test_compare_zero_length_par_row_as_the_base(tmp_path):
     assert mine["par_check"] == theirs["par_check"] == 1 and {k: theirs[k] for k in mine} == mine
 
 
+# F2 (round 2): a header-only call.cns (all bins low-coverage: an empty segmentation). CNVkit fc65941 do_genemetrics
+# then reports per-gene bin means (gene_metrics_by_gene), without segment columns. Rows below: cgp-cnvkit:1.0.0
+# output for such a sample, -x male, before and after `shift` (tests/validation/test_parfix_empty_segments.py).
+
+GM_BINS_H = "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tprobes\n"
+BINS_NONPAR = "NONPAR\tchrX\t5000000\t5001200\t-9\t0\t3\t6\n"
+BINS_CRLF2 = "CRLF2\tchrX\t1190891\t1192091\t{}\t0\t3\t6\n"
+
+
+def crlf2_bins(v):
+    return [BINS_CRLF2.format(v)] if v else []
+
+
+def bins(tmp_path, before, after):
+    cns = tmp_path / "s.call.cns"
+    cns.write_text("chromosome\tstart\tend\tgene\tlog2\tcn\tdepth\tweight\n")
+    o = gm(tmp_path, "s.genemetrics.noparfix.tsv", BINS_NONPAR, *before, header=GM_BINS_H)
+    n = gm(tmp_path, "s.genemetrics.tsv", BINS_NONPAR, *after, header=GM_BINS_H)
+    return o, n, cns
+
+
+@pytest.mark.parametrize("before, after", [
+    ("-9", "-10"),                  # the image's output
+    ("1.5", "0.5"), ("11", "9.99996"), ("1.26805", None), (None, "-1.26805"),
+])
+def test_compare_without_segments_checks_the_bin_rows(tmp_path, before, after):
+    o, n, cns = bins(tmp_path, crlf2_bins(before), crlf2_bins(after))
+    assert port.compare(o, n, cns)["par_check"] == "bins"
+    proc = run("compare", o, n, cns)
+    assert proc.returncode == 0 and proc.stdout.strip().endswith("par_check=bins"), proc.stderr
+
+
+def test_compare_without_segments_the_base_reported_par_check_0(tmp_path):
+    o, n, cns = bins(tmp_path, [BINS_CRLF2.format("-9")], [BINS_CRLF2.format("-10")])
+    (tmp_path / "s.cnr").write_text(CNR_H)
+    assert ref.compare(dict(action="dry", rundir=str(tmp_path), sample="s", orig=str(o), new=str(n)))["par_check"] == 0
+
+
+@pytest.mark.parametrize("before, after", [
+    ("-9", "-9"), ("-9", "-10.0001"), ("1.5", None), (None, "0.5"), ("-9", "nan"),
+])
+def test_compare_without_segments_rejects_an_unshifted_bin_row(tmp_path, before, after):
+    o, n, cns = bins(tmp_path, crlf2_bins(before), crlf2_bins(after))
+    rec = port.compare(o, n, cns)
+    assert rec["par_check"] == 0 and rec["unexplained"] == "CRLF2@chrX:1190891-1192091"
+    proc = run("compare", o, n, cns)
+    assert proc.returncode == 1 and "FAILED: par_check 0" in proc.stderr
+
+
+def test_compare_without_segments_does_not_attribute_a_row_across_a_par_boundary(tmp_path):
+    row = "G\tchrX\t2781000\t2782000\t{}\t0\t3\t6\n"           # bins on both sides of the PAR1 end
+    o, n, cns = bins(tmp_path, [row.format("-9")], [row.format("-9.5")])
+    assert port.compare(o, n, cns)["par_check"] == "bins"
+
+
 # the minimum the comparison needs to read a genemetrics table (round 3, S3): a header naming the columns it reads,
 # one field per column, integer coordinates and a numeric log2; an empty or truncated table fails
 
