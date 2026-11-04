@@ -99,8 +99,8 @@ def test_the_l3_key_sets_are_what_cnvkit_parfix_prints(tmp_path):
     gm_h = "gene\tchromosome\tstart\tend\tlog2\tdepth\tweight\tcn\tprobes\tsegment_weight\tsegment_probes\n"
     (tmp_path / "s.cnr").write_text(cnr_h + "chrX\t1190891\t1191000\tCRLF2\t1.26805\t100\t1\n")
     for end, check in ((2781479, "1"), (9000000, "span")):
-        (tmp_path / "s.call.cns").write_text(cns_h + f"chrX\t1190891\t{end}\tCRLF2\t0.26805\t2\t679\t8\t7.2\n")
-        crlf2 = "CRLF2\tchrX\t1190891\t1212654\t1.26805\t679\t7.2\t3\t8\t7.2\t8\n"
+        (tmp_path / "s.call.cns").write_text(cns_h + f"chrX\t1190891\t{end}\tCRLF2\t0.26805\t3\t679\t8\t7.2\n")
+        crlf2 = "CRLF2\tchrX\t1190891\t1212654\t1.26805\t679\t7.2\t3\t8\t7.2\t8\n"   # cn 3: the segment's
         (tmp_path / "o.tsv").write_text(gm_h + crlf2)
         (tmp_path / "n.tsv").write_text(gm_h + (crlf2 if check == "span" else ""))
         p = vdata.script("cnvkit_parfix.py", "shift", "s.cnr", "s.call.cns", "parfix", cwd=tmp_path)
