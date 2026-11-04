@@ -80,8 +80,12 @@ accepted as corrected. Anything else is an unexplained PAR discrepancy (`par_che
 printing every value to 6 significant digits (`%.6g`): the difference may be up to half a unit in the 6th digit at
 the value's magnitude (a segment at 9.99996 gives 10.99996 before the fix, printed as `11`). CNVkit writes
 overlapping segments for overlapping targets, and `genemetrics` reports a gene once for each segment that overlaps
-its bins, at that segment's log2; a PAR row is therefore explained when any segment it overlaps or lies in explains
-it (with non-overlapping segments, that is the one segment containing it). `compare` reads the two genemetrics tables with
+its bins, at that segment's log2, with the segment's probe count and weight (`segment_probes`, `segment_weight`); a
+PAR row is therefore explained when any segment it overlaps or lies in, and whose probe count and weight it carries,
+explains it (with non-overlapping segments, that is the one segment containing it). A `call.cns` with no segments
+(every bin dropped as low-coverage) makes `genemetrics` report per-gene bin means instead; then each PAR row wholly
+inside a PAR must be its row before the fix less 1.0 (or have crossed the 0.3 threshold), a row spanning a PAR
+boundary is not checked, and the job warns (`par_check=bins`). `compare` reads the two genemetrics tables with
 only the checks it needs to compare them: identical headers starting `gene chromosome start end log2` (CNVkit's
 header-only table, when no gene is reported, may stand on either side), one field per column, integer coordinates
 and a numeric log2; an empty or truncated table fails. The job fails, with no outputs, on such a table, when non-PAR
@@ -222,7 +226,7 @@ python3 -m venv .venv && .venv/bin/python -m pip install --require-hashes --no-d
 
 Tests whose prerequisite is absent (Docker or the image, the validation data, ShellCheck) are **skipped, not
 failed**, and pytest still exits 0. Read the `-rs` skip summary, and do not take a run as a pass unless the layers you
-need ran with no skips (L3 + L4: 14 tests). The one exception: a Docker check that timed out and could not confirm
+need ran with no skips (L3 + L4: 15 tests). The one exception: a Docker check that timed out and could not confirm
 its own cleanup (a `docker` process may remain) fails the Docker tests instead of skipping them.
 
 | Layer | What it proves |
@@ -251,7 +255,10 @@ distinct sample IDs: replicates share one), and each comparison must cover all 2
   0; 4 span samples in each set have no PAR row. A further test, with no validation data, runs CNVkit's own
   `genemetrics` in the image on a synthetic male with overlapping PAR1 bins and two overlapping segments: the
   post-step completes with `par_check=1`, and where both segments contain the PAR row the output equals the base
-  (v2.1.0 before the review fixes, whose `compare` is the pinned original's) byte for byte.
+  (v2.1.0 before the review fixes, whose `compare` is the pinned original's) byte for byte. Another runs pipeline.sh's
+  `segment`, `call` and `genemetrics` in the image on a synthetic male whose bins all have zero depth: the
+  segmentation is empty, CRLF2's bin-mean row goes from -9 to -10, and `compare` completes with `par_check=bins`
+  (the base logged `par_check=0` and published the same table).
 - `cnvkit_sex_qc.py` (UMI and non-UMI, all 226): per sequencing, `cnvkit.py sex` on the coverage and on the `.cnr`
   (arm A0), then `resolve`, `decide` / `shift` (for `par_fix_applied` and `par_span_segments`) and `qc`. The pinned
   `sex_check.py`, on run-prefixed tables built from those per-sample tables, reproduces the validated UMI
