@@ -5,7 +5,7 @@ harness's `--start-from bam` BAM/BAI transfers and their `dx describe` / `dx fin
 are unbounded (https://github.com/eastgenomics/eggd_cgp-cnvkit-batch/issues/5). A command that can start descendants
 (bash running the app under stubs, `docker`, `dx`, `git`) runs in a new session (run_group; the L4 harness's pipeline
 run does the same itself), so on timeout the whole process
-group is killed, not only its leader; `cleanup` then removes anything the group owned outside it (e.g. a named Docker
+group is killed, not only its leader; `cleanup` then attempts to remove anything the group owned outside it (e.g. a named Docker
 container). The same happens when waiting is interrupted (KeyboardInterrupt or any other exception), which is then
 re-raised unchanged. A bundled Python script with no descendants runs under plain subprocess.run(timeout=...).
 
@@ -203,7 +203,7 @@ def remove_container(name, timeout=DOCKER_RM_TIMEOUT):
 def remove_containers(names, timeout=DOCKER_RM_TIMEOUT):
     """remove_container for each name, every one attempted; returns the problems (empty when every container is
     confirmed removed or absent). Any exception from a removal, not only RuntimeError, is a problem reported for that
-    name, never raised, so the remaining names are still removed (round 6, V2)."""
+    name, never raised, so removal of the remaining names is still attempted (round 6, V2)."""
     problems = []
     for name in names:
         try:

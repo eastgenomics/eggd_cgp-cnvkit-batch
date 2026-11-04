@@ -47,7 +47,8 @@ Runs the validated Atlas CGP configuration (`D_gcclip_on_s2` with the dropout ma
 - Outputs `genemetrics_noparfix`, `sex_qc`, `sex_check_mqc`, `dropout_qc`, `target_coverage` (DI-4104)
 - Tests: static checks, unit tests, command-line contract tests (CI), equivalence tests against the validation on
   226 sequencings (each script through its command line, as `pipeline.sh` runs it; results keyed by run and sample)
-  and a local harness with the real image (which must compare all 16 local sequencings). Test helper commands are
+  and a local harness with the real image (its pytest L4 tests require a PASS for all 16 local sequencings; a
+  `--samples` subset run is allowed but is not L4 evidence). Test helper commands are
   bounded (process group killed on timeout, any unconfirmed cleanup reported without masking the original failure),
   except the harness's BAM-start BAM/BAI transfers (deferred, issue #5). CI pins its actions, uv (installed by hash)
   and ShellCheck, and installs the test requirements by hash

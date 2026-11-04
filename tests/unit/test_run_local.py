@@ -350,7 +350,8 @@ def test_bed_failure_report_keeps_the_cleanup_notes(tmp_path, monkeypatch):
     assert procutil.UNCONFIRMED in detail and "still running after the kill" in detail
 
 
-# round 7 (W2): the harness cannot pass without comparing every local test sequencing
+# round 7 (W2): the harness validates its 16-row manifest and fails a sequencing with nothing compared; a --samples
+# subset may still pass, so full L4 evidence is the pytest L4 tests, which each require all 16
 
 def manifest(tmp_path, monkeypatch, rows):
     real = run_local.read_tsv(run_local.SAMPLES)
