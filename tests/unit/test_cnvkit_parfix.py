@@ -334,14 +334,15 @@ def test_compare_span_elsewhere_does_not_explain_a_par_row(tmp_path):
 
 # per-row verdicts (R1, R2): each PAR row is judged against its own segment
 
-PAR2_ORIG = "VAMP7\tchrX\t155881000\t155943000\t1.5\t500\t6\t3\t9\t6\t9\n"
-PAR2_FIXED = "VAMP7\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t6\t9\n"
+PAR2_ORIG = "VAMP7\tchrX\t155881000\t155943000\t1.5\t500\t6\t3\t9\t7.2\t8\n"
+PAR2_FIXED = "VAMP7\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t7.2\t8\n"
 
 
 def cns_rows(tmp_path, *rows):
+    """rows: (start, end, log2[, probes, weight]); probes 8 and weight 7.2 by default, as the rows above carry."""
     p = tmp_path / "s.call.cns"
     p.write_text(CNS_H + "chr17\t7000000\t8000000\tTP53\t-0.62\t1\t400\t10\t5\n" + "".join(
-        f"chrX\t{s}\t{e}\tG\t{l2}\t2\t500\t8\t7.2\n" for s, e, l2 in rows))
+        f"chrX\t{s}\t{e}\tG\t{l2}\t2\t500\t{n}\t{w}\n" for s, e, l2, n, w in (r + (8, 7.2)[len(r) - 3:] for r in rows)))
     return p
 
 
@@ -523,8 +524,8 @@ def test_compare_span_row_equal_to_the_segment_without_a_spanned_label(tmp_path)
 
 # round 3 (S2): a before-row is replaced only by the after-row with its gene, coordinates and other fields
 
-CRLF2_A = "CRLF2\tchrX\t1190891\t1200000\t{}\t679\t7.2\t3\t4\t7.2\t4\n"      # CRLF2 split over two segments
-CRLF2_B = "CRLF2\tchrX\t1200000\t1212654\t{}\t679\t7.2\t3\t4\t7.2\t4\n"
+CRLF2_A = "CRLF2\tchrX\t1190891\t1200000\t{}\t679\t7.2\t3\t4\t7.2\t8\n"      # CRLF2 split over two segments
+CRLF2_B = "CRLF2\tchrX\t1200000\t1212654\t{}\t679\t7.2\t3\t4\t7.2\t8\n"
 TWO_SEGS = ((1190891, 1200000, "0.5"), (1200000, 2781479, "0.6"))
 
 
@@ -554,7 +555,7 @@ def test_compare_missing_row_not_excused_by_the_same_gene_in_another_segment(tmp
 
 
 def test_compare_missing_row_not_excused_by_the_same_gene_in_par2(tmp_path):
-    other = "CRLF2\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t6\t9\n"
+    other = "CRLF2\tchrX\t155881000\t155943000\t0.5\t500\t6\t3\t9\t7.2\t8\n"
     cns = cns_rows(tmp_path, (1190891, 2781479, "0.5"), (155800000, 156000000, "0.5"))
     rec, _ = verdict(tmp_path, [CRLF2_ORIG.replace("1.26805", "1.5")], [other], cns)
     assert rec["par_check"] == 0
@@ -711,10 +712,37 @@ def test_compare_overlapping_segments_still_reject_an_unexplained_row(tmp_path, 
 
 def test_compare_two_rows_of_one_gene_from_two_overlapping_segments(tmp_path):
     # one row per overlapping segment, each at its own segment's log2 (all of them would reject this valid table)
-    cns = cns_rows(tmp_path, (1100000, 1300000, "0.5"), (1190891, 2781479, "0.8"))
+    cns = cns_rows(tmp_path, (1100000, 1300000, "0.5"), (1190891, 2781479, "0.8", 9, 9))
     rows = [CRLF2_ORIG.replace("1.26805", "1.5"), CRLF2_ORIG.replace("1.26805", "1.8").replace("\t7.2\t8\n", "\t9\t9\n")]
     rec, proc = verdict(tmp_path, rows, [r.replace("\t1.5\t", "\t0.5\t").replace("\t1.8\t", "\t0.8\t") for r in rows], cns)
     assert rec["par_check"] == 1 and proc.returncode == 0, proc.stderr
+
+
+# F1 (round 2): genemetrics copies a segment's probes and weight into each row it reports from it (segment_probes,
+# segment_weight), and --min-probes 3 drops the rows of a segment with fewer probes: an overlapping segment whose
+# fields the row does not carry cannot explain it
+
+@pytest.mark.parametrize("probes, weight", [(1, 7.2), (8, 1), (1, 1)])
+def test_compare_overlapping_segment_without_the_rows_fields_does_not_explain_it(tmp_path, probes, weight):
+    # CRLF2 (segment_probes 8) comes from its wholly-PAR segment and still carries the +1 after the fix; an
+    # overlapping segment spanning the PAR1 boundary at the same log2, with 1 probe (filtered out) or another weight
+    cns = cns_rows(tmp_path, WHOLLY + ("0.26805",), (1200000, 9000000, "0.26805", probes, weight))
+    rec, proc = verdict(tmp_path, [CRLF2_ORIG], [CRLF2_ORIG], cns)
+    assert rec["par_check"] == 0 and rec["unexplained"] == "CRLF2@chrX:1190891-1212654" and "span_genes" not in rec
+    assert proc.returncode == 1 and "FAILED: par_check 0" in proc.stderr
+    # the same segment with the row's probes and weight explains it (span), at their %.6g print
+    cns = cns_rows(tmp_path, WHOLLY + ("0.26805",), (1200000, 9000000, "0.26805", 8, "7.200001"))
+    assert verdict(tmp_path, [CRLF2_ORIG], [CRLF2_ORIG], cns)[0]["par_check"] == "span"
+
+
+def test_compare_corrected_row_needs_its_segments_fields(tmp_path):
+    # a corrected row is judged against the segment it carries the fields of: the overlapping 1-probe segment at
+    # 0.5 does not explain CRLF2 at 0.5 when CRLF2's own segment (8 probes) is at 0.8
+    cns = cns_rows(tmp_path, (1100000, 1300000, "0.5", 1, 1), WHOLLY + ("0.8",))
+    rec, _ = verdict(tmp_path, [CRLF2_ROW.format("1.5")], [CRLF2_ROW.format("0.5")], cns)
+    assert rec["par_check"] == 0
+    rec, _ = verdict(tmp_path, [CRLF2_ROW.format("1.8")], [CRLF2_ROW.format("0.8")], cns)
+    assert rec["par_check"] == 1
 
 
 def test_row_segments():
