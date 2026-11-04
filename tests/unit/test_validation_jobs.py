@@ -2,6 +2,7 @@
 import argparse
 import importlib.util
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -11,6 +12,16 @@ pytestmark = pytest.mark.unit
 
 REPO = Path(__file__).resolve().parents[2]
 JOB_COLS = ["key", "run", "sample", "sample_id", "extra", "job", "applet", "git_commit"]
+
+
+@pytest.fixture(autouse=True)
+def no_live_dx(tmp_path_factory, monkeypatch):
+    """A `dx` first on PATH that fails: these tests mock every dx call, and must never reach DNAnexus."""
+    bin_dir = tmp_path_factory.mktemp("no_live_dx")
+    stub = bin_dir / "dx"
+    stub.write_text('#!/bin/sh\necho "unit test reached the dx CLI: $*" >&2\nexit 99\n')
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
 
 
 @pytest.fixture
@@ -41,14 +52,14 @@ def record(vj, applet):
 
 
 def test_build_refuses_untracked_files(vj, monkeypatch):
-    real_run = subprocess.run
+    real_run = vj.run_group
 
-    def fake_run(cmd, **kw):
+    def fake_run(cmd, timeout, **kw):
         if cmd[:2] == ["git", "status"]:
-            assert "--untracked-files=no" not in cmd
+            assert "--untracked-files=no" not in cmd and timeout == vj.GIT_TIMEOUT
             return subprocess.CompletedProcess(cmd, 0, stdout="?? resources/usr/local/bin/new.py\n", stderr="")
-        return real_run(cmd, **kw)
-    monkeypatch.setattr(vj.subprocess, "run", fake_run)
+        return real_run(cmd, timeout, **kw)
+    monkeypatch.setattr(vj, "run_group", fake_run)
     with pytest.raises(SystemExit, match="commit the working tree first"):
         vj.build(argparse.Namespace())
     assert vj.calls == []                         # nothing built
@@ -99,7 +110,7 @@ def load_fresh():
 
 def test_dx_non_zero_exit_raises_with_stderr(monkeypatch):
     m = load_fresh()
-    monkeypatch.setattr(m.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+    monkeypatch.setattr(m, "run_group", lambda cmd, timeout, **kw: subprocess.CompletedProcess(
         cmd, 3, stdout="", stderr="dxpy.exceptions.PermissionDenied: VIEW permission required in project-x"))
     with pytest.raises(RuntimeError, match="PermissionDenied: VIEW permission required"):
         m.dx("describe", "file-x")
@@ -108,9 +119,9 @@ def test_dx_non_zero_exit_raises_with_stderr(monkeypatch):
 def test_dx_missing_binary_is_a_clear_error(monkeypatch):
     m = load_fresh()
 
-    def missing(cmd, **kw):
+    def missing(cmd, timeout, **kw):
         raise FileNotFoundError(2, "No such file or directory", "dx")
-    monkeypatch.setattr(m.subprocess, "run", missing)
+    monkeypatch.setattr(m, "run_group", missing)
     with pytest.raises(RuntimeError, match="dx CLI not found"):
         m.dx("describe", "file-x")
 
@@ -119,10 +130,10 @@ def test_dx_timeouts(monkeypatch):
     m = load_fresh()
     seen = []
 
-    def hang(cmd, **kw):
-        seen.append((cmd[1], kw["timeout"]))
-        raise subprocess.TimeoutExpired(cmd, kw["timeout"])
-    monkeypatch.setattr(m.subprocess, "run", hang)
+    def hang(cmd, timeout, **kw):
+        seen.append((cmd[1], timeout))
+        raise subprocess.TimeoutExpired(cmd, timeout)
+    monkeypatch.setattr(m, "run_group", hang)
     for args in (("describe", "job-x"), ("download", "file-x")):
         with pytest.raises(RuntimeError, match="timed out"):
             m.dx(*args)
@@ -135,7 +146,7 @@ def test_failed_build_records_no_applet(vj, monkeypatch):
             raise RuntimeError("dx build /repo: dxpy.app_builder.AppBuilderException: invalid dxapp.json")
         return ""
     monkeypatch.setattr(vj, "dx", fake_dx)
-    monkeypatch.setattr(vj.subprocess, "run", lambda cmd, **kw: subprocess.CompletedProcess(
+    monkeypatch.setattr(vj, "run_group", lambda cmd, timeout, **kw: subprocess.CompletedProcess(
         cmd, 0, stdout="" if cmd[:2] == ["git", "status"] else "abc1234\n", stderr=""))
     before = (vj.RUNS / "applet.txt").read_text()
     with pytest.raises(SystemExit, match="invalid dxapp.json"):

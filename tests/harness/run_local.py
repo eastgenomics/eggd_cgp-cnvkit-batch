@@ -13,7 +13,9 @@ probe has no UMI post-step baseline (reported as n/a; the non-UMI N-M covers tha
 Usage
   run_local.py --data umi|nonumi [--dropout-mask true|false] [--start-from coverage|bam] [--samples S ...]
                [--jobs N] [--label NAME]
-  --start-from bam downloads the non-UMI BAM/BAI and the bins BED (cached under tests/.data/harness/inputs/).
+  --start-from bam downloads the non-UMI BAM/BAI and the bins BED (cached under tests/.data/harness/inputs/). The BED
+  download is bounded (BED_TIMEOUT); the BAM/BAI transfers and their dx describe / dx find calls are not (deferred:
+  https://github.com/eastgenomics/eggd_cgp-cnvkit-batch/issues/5).
 Writes tests/.data/harness/<label>/<run>/<sample>/ and <label>/report.tsv; exit 1 on any FAIL.
 After unconfirmed timeout cleanup, inspect the named container and process before removing the sample's
 .cleanup-unconfirmed marker to allow reuse of its work directory.
@@ -23,7 +25,6 @@ import concurrent.futures as cf
 import csv
 import os
 import shutil
-import signal
 import subprocess
 import sys
 import threading
@@ -31,8 +32,9 @@ import uuid
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(REPO / "tests" / "validation"))
+sys.path[:0] = [str(REPO / "tests" / "validation"), str(REPO / "tests" / "unit")]
 from vdata import DATA  # noqa: E402 -- tests/validation is put on sys.path above (not a package)
+from procutil import failure_text, kill_group, remove_container, run_group  # noqa: E402 -- tests/unit on sys.path
 
 HARNESS = REPO / "tests" / ".data" / "harness"
 LIB = REPO / "resources" / "usr" / "local" / "lib" / "cgp_cnvkit_batch" / "pipeline.sh"
@@ -74,7 +76,7 @@ def fetch_bed():
         if not bed.exists():
             part = bed.with_name(f"{bed.name}.{uuid.uuid4().hex}.part")
             try:
-                subprocess.run(["dx", "download", "-f", BED, "-o", str(part)], check=True, timeout=BED_TIMEOUT)
+                run_group(["dx", "download", "-f", BED, "-o", str(part)], BED_TIMEOUT, check=True)
                 os.replace(part, bed)
             finally:
                 try:
@@ -85,7 +87,8 @@ def fetch_bed():
 
 
 def fetch_bam_inputs(run, s):
-    """Non-UMI BAM + BAI (the eggd_chr_prefix output the coverage app used), cached."""
+    """Non-UMI BAM + BAI (the eggd_chr_prefix output the coverage app used), cached. These dx calls have no timeout
+    (deferred: https://github.com/eastgenomics/eggd_cgp-cnvkit-batch/issues/5)."""
     inv = {(r["run"], r["sample_id"]): r for r in read_tsv(DATA / "manifest" / "nonumi_inventory.tsv")}
     bam_ref = inv[(run, s)]["new_bam"]
     d = HARNESS / "inputs" / run / s
@@ -107,15 +110,13 @@ def fetch_bam_inputs(run, s):
 
 
 def stop_container(name, log):
-    """Boundedly remove only this run's container; report unconfirmed cleanup."""
+    """Boundedly remove only this run's container (procutil.remove_container: removed, or already gone); report
+    unconfirmed cleanup. Any exception from the removal is unconfirmed cleanup, reported and never raised (round 6,
+    V2), so the caller still writes its .cleanup-unconfirmed marker."""
     try:
-        result = subprocess.run(["docker", "rm", "--force", name], capture_output=True, text=True,
-                                timeout=CLEANUP_TIMEOUT)
-    except (subprocess.SubprocessError, OSError) as e:
-        log.write(f"Container cleanup not confirmed for {name}: {e}\n")
-        return False
-    if result.returncode:
-        log.write(f"Container cleanup not confirmed for {name}: {result.stderr.strip()}\n")
+        remove_container(name, CLEANUP_TIMEOUT)
+    except Exception as e:  # noqa: BLE001 -- unconfirmed cleanup is reported, and must not bypass the marker
+        log.write(f"Container cleanup not confirmed for {name}: {e if isinstance(e, RuntimeError) else repr(e)}\n")
         return False
     log.write(f"Removed timed-out container {name}\n")
     return True
@@ -160,23 +161,28 @@ def run_sample(row, a, out):
         try:
             return proc.wait(timeout=PIPELINE_TIMEOUT)
         except subprocess.TimeoutExpired:
-            log.write(f"\nTIMEOUT after {PIPELINE_TIMEOUT} s; process group {proc.pid}\n")
-            group_stopped = True
+            # the marker is written unless both the group and the container are confirmed gone, whatever is raised
+            # on the way (round 6, V2); an unexpected failure of the group kill is reported as unconfirmed cleanup,
+            # so the timeout is still a FAIL with exit 124 in the report (round 7, W3)
+            group_stopped = removed = False
             try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-            except OSError as e:
-                group_stopped = False
-                log.write(f"Process-group cleanup not confirmed: {e}\n")
-            try:
-                proc.wait(timeout=CLEANUP_TIMEOUT)
-            except (subprocess.SubprocessError, OSError) as e:
-                group_stopped = False
-                log.write(f"Process-group cleanup not confirmed: waiting for the shell: {e}\n")
-            removed = stop_container(container, log)
-            if not group_stopped or not removed:
-                marker.write_text(container + "\n")
+                log.write(f"\nTIMEOUT after {PIPELINE_TIMEOUT} s; process group {proc.pid}\n")
+                try:
+                    problems = kill_group(proc)     # procutil: SIGKILL the group, else at least the shell
+                except Exception as e:  # noqa: BLE001 -- round 7 (W3): unconfirmed cleanup, reported; still exit 124
+                    problems = [f"killing process group {proc.pid} failed: {e!r}"]
+                for p in problems:
+                    log.write(f"Process-group cleanup not confirmed: {p}\n")
+                group_stopped = not problems
+                try:
+                    proc.wait(timeout=CLEANUP_TIMEOUT)
+                except Exception as e:  # noqa: BLE001 -- the wait is unconfirmed cleanup; the container still goes
+                    group_stopped = False
+                    log.write(f"Process-group cleanup not confirmed: waiting for the shell: {e!r}\n")
+            finally:
+                removed = stop_container(container, log)
+                if not group_stopped or not removed:
+                    marker.write_text(container + "\n")
             return 124
 
 
@@ -278,7 +284,7 @@ def main(argv=None):
         # Do not touch any sample workdir: it may contain evidence of unconfirmed container cleanup.
         for r in rows:
             marker = out / r["run"] / r["sample"] / ".cleanup-unconfirmed"
-            detail = f"shared BED download failed: {bed_error}"
+            detail = f"shared BED download failed: {failure_text(bed_error)}"
             if marker.exists():
                 detail += f"; cleanup unconfirmed; see {marker}"
             results.append((r["sample"], "pipeline", "FAIL", detail))
@@ -290,7 +296,7 @@ def main(argv=None):
     with open(out / "report.tsv", "w") as fh:
         fh.write("sample\tcheck\tresult\tdetail\n")
         for x in results:
-            fh.write("\t".join(x) + "\n")
+            fh.write("\t".join(" ".join(v.split("\n")).replace("\t", " ") for v in x) + "\n")   # one line per check
     by_sample = {}
     for s, check, result, detail in results:
         by_sample.setdefault(s, []).append((check, result, detail))

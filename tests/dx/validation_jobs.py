@@ -21,9 +21,10 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(REPO / "tests" / "validation"), str(REPO / "tests" / "harness")]
+sys.path[:0] = [str(REPO / "tests" / "validation"), str(REPO / "tests" / "harness"), str(REPO / "tests" / "unit")]
 from vdata import DATA  # noqa: E402 -- tests/validation is put on sys.path above (not a package)
 import run_local  # noqa: E402 -- tests/harness is put on sys.path above (not a package)
+from procutil import failure_text, run_group, timed_out  # noqa: E402 -- tests/unit is on sys.path above (not a package)
 
 PROJECT = "project-JF3p1f04Yggp0vf3PYjy7Q0F"
 ROOT = "/batch_app_v2.1.0"
@@ -44,14 +45,15 @@ LONG = {"download", "upload", "watch", "build"}
 
 def dx(*args, check=True, timeout=None):
     """Run the dx CLI; raise RuntimeError with its stderr on failure (non-zero exit when check, missing binary,
-    timeout)."""
+    timeout). Bounded in its own process group: on timeout dx and any child it started are killed, and the message
+    keeps the captured stderr and any unconfirmed cleanup (procutil.timed_out)."""
     timeout = timeout or (LONG_TIMEOUT if args and args[0] in LONG else DX_TIMEOUT)
     try:
-        p = subprocess.run(["dx", *args], capture_output=True, text=True, timeout=timeout)
+        p = run_group(["dx", *args], timeout, capture_output=True, text=True)
     except FileNotFoundError:
         raise RuntimeError("dx CLI not found on PATH (install dx-toolkit and log in)") from None
-    except subprocess.TimeoutExpired:
-        raise RuntimeError(f"dx {' '.join(args[:2])} timed out after {timeout} s") from None
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(timed_out(f"dx {' '.join(args[:2])}", timeout, e)) from None
     if check and p.returncode:
         raise RuntimeError(f"dx {' '.join(args)}: {p.stderr.strip()}")
     return p.stdout
@@ -59,6 +61,17 @@ def dx(*args, check=True, timeout=None):
 
 def dxjson(*args):
     return json.loads(dx(*args, "--json"))
+
+
+def git(*args):
+    """git's stdout, bounded (GIT_TIMEOUT, process group killed on timeout); raise RuntimeError with git's stderr and
+    any unconfirmed cleanup on failure (CalledProcessError alone would drop the stderr)."""
+    try:
+        return run_group(["git", *args], GIT_TIMEOUT, cwd=REPO, capture_output=True, text=True, check=True).stdout
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(timed_out(f"git {' '.join(args)}", GIT_TIMEOUT, e)) from None
+    except (subprocess.CalledProcessError, OSError) as e:
+        raise RuntimeError(f"git {' '.join(args)}: {failure_text(e)}") from None
 
 
 def read_tsv(path):
@@ -131,12 +144,10 @@ def prepare(_):
 
 def build(_):
     # every file dx build could include (tracked or untracked, not ignored) must be committed
-    status = subprocess.run(["git", "status", "--porcelain"], cwd=REPO, capture_output=True, text=True, check=True,
-                            timeout=GIT_TIMEOUT)
-    if status.stdout.strip():
-        sys.exit("commit the working tree first: the applet must be built from a recorded commit\n" + status.stdout)
-    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True,
-                         text=True, check=True, timeout=GIT_TIMEOUT).stdout.strip()
+    status = git("status", "--porcelain")
+    if status.strip():
+        sys.exit("commit the working tree first: the applet must be built from a recorded commit\n" + status)
+    sha = git("rev-parse", "--short", "HEAD").strip()
     folder = f"{ROOT}/applet/{sha}"
     dx("mkdir", "-p", f"{PROJECT}:{folder}")
     try:

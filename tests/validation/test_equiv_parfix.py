@@ -36,13 +36,13 @@ def lims_sex_arg(sample):
 
 def in_image(tmp_path, script):
     """Run a shell script in the image with the data (read-only) and tmp_path mounted at their own paths. The
-    container is named, so a timed-out run (client process group killed) also removes its container."""
+    container is named, so a timed-out or interrupted run (client process group killed) also removes its container."""
     name = f"cnvkit-l3-{uuid.uuid4().hex}"
     cmd = ["docker", "run", "--rm", "--name", name, "-u", f"{os.getuid()}:{os.getgid()}", "-e", "HOME=/tmp",
            "-e", "MPLCONFIGDIR=/tmp",
            "-v", f"{DATA.resolve()}:{DATA.resolve()}:ro", "-v", f"{tmp_path}:{tmp_path}", "-w", str(tmp_path),
            IMAGE, "bash", "-c", script]
-    proc = run_group(cmd, IMAGE_TIMEOUT, on_timeout=lambda: remove_container(name), capture_output=True, text=True)
+    proc = run_group(cmd, IMAGE_TIMEOUT, cleanup=lambda: remove_container(name), capture_output=True, text=True)
     assert proc.returncode == 0, proc.stderr[-3000:]
 
 

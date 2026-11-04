@@ -3,29 +3,41 @@ import argparse
 import concurrent.futures as cf
 import csv
 import io
+import os
 import signal
 import subprocess
 from pathlib import Path
 
 import pytest
 
+import procutil
 import run_local
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def no_live_dx(tmp_path_factory, monkeypatch):
+    """A `dx` first on PATH that fails: these tests mock every dx call, and must never reach DNAnexus."""
+    bin_dir = tmp_path_factory.mktemp("no_live_dx")
+    stub = bin_dir / "dx"
+    stub.write_text('#!/bin/sh\necho "unit test reached the dx CLI: $*" >&2\nexit 99\n')
+    stub.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
 
 
 def test_shared_bed_is_published_once(tmp_path, monkeypatch):
     monkeypatch.setattr(run_local, "HARNESS", tmp_path)
     commands = []
 
-    def download(cmd, **kwargs):
+    def download(cmd, timeout, **kwargs):
         commands.append(cmd)
-        assert kwargs["timeout"] == run_local.BED_TIMEOUT
+        assert timeout == run_local.BED_TIMEOUT
         assert not (tmp_path / "inputs" / "panel.bed").exists()
         Path(cmd[-1]).write_text("complete\n")
         return subprocess.CompletedProcess(cmd, 0)
 
-    monkeypatch.setattr(run_local.subprocess, "run", download)
+    monkeypatch.setattr(run_local, "run_group", download)
     with cf.ThreadPoolExecutor(max_workers=8) as ex:
         beds = list(ex.map(lambda _: run_local.fetch_bed(), range(8)))
     assert len(commands) == 1 and all(p == beds[0] for p in beds)
@@ -37,16 +49,16 @@ def test_shared_bed_is_published_once(tmp_path, monkeypatch):
 def test_shared_bed_failure_removes_partial(tmp_path, monkeypatch, failure):
     monkeypatch.setattr(run_local, "HARNESS", tmp_path)
 
-    def download(cmd, **kwargs):
-        assert kwargs["timeout"] == run_local.BED_TIMEOUT
+    def download(cmd, timeout, **kwargs):
+        assert timeout == run_local.BED_TIMEOUT
         Path(cmd[-1]).write_text("partial")
         if failure == "timeout":
-            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+            raise subprocess.TimeoutExpired(cmd, timeout)
         if failure == "missing":
             raise FileNotFoundError("dx")
         raise subprocess.CalledProcessError(1, cmd)
 
-    monkeypatch.setattr(run_local.subprocess, "run", download)
+    monkeypatch.setattr(run_local, "run_group", download)
     with pytest.raises((subprocess.SubprocessError, OSError)):
         run_local.fetch_bed()
     assert not (tmp_path / "inputs" / "panel.bed").exists()
@@ -67,17 +79,17 @@ def test_shared_bed_failure_reports_all_without_workers(tmp_path, monkeypatch, f
     log.write_text("previous diagnostics\n")
     calls = []
 
-    def download(cmd, **kwargs):
+    def download(cmd, timeout, **kwargs):
         calls.append(cmd)
         Path(cmd[-1]).write_text("partial")
         if failure == "timeout":
-            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+            raise subprocess.TimeoutExpired(cmd, timeout)
         raise subprocess.CalledProcessError(1, cmd)
 
     def must_not_run(*args):
         pytest.fail("a sample worker started after shared BED failure")
 
-    monkeypatch.setattr(run_local.subprocess, "run", download)
+    monkeypatch.setattr(run_local, "run_group", download)
     monkeypatch.setattr(run_local, "run_sample", must_not_run)
     assert run_local.main(["--data", "nonumi", "--start-from", "bam", "--label", "test"]) == 1
     assert len(calls) == 1
@@ -165,13 +177,13 @@ def test_pipeline_timeout_stops_process_group_and_exact_container(tmp_path, monk
         seen["container"] = kwargs["env"]["HARNESS_CONTAINER_NAME"]
         return FakeProcess()
 
-    def docker(cmd, **kwargs):
-        events.append(("docker", cmd, kwargs["timeout"]))
+    def docker(cmd, timeout, **kwargs):
+        events.append(("docker", cmd, timeout))
         return subprocess.CompletedProcess(cmd, 0, stdout=cmd[-1], stderr="")
 
     monkeypatch.setattr(run_local.subprocess, "Popen", popen)
     monkeypatch.setattr(run_local.os, "killpg", lambda pid, sig: events.append(("killpg", pid, sig)))
-    monkeypatch.setattr(run_local.subprocess, "run", docker)
+    monkeypatch.setattr(procutil, "run_group", docker)     # stop_container -> procutil.remove_container
     assert run_local.run_sample(row, args, tmp_path / "out") == 124
     container = seen["container"]
     assert events == [("wait", run_local.PIPELINE_TIMEOUT), ("killpg", 12345, signal.SIGKILL),
@@ -183,7 +195,8 @@ def test_pipeline_timeout_stops_process_group_and_exact_container(tmp_path, monk
     assert not (wd / ".cleanup-unconfirmed").exists()
 
 
-@pytest.mark.parametrize("failure", ["kill_error", "wait_timeout", "wait_error", "docker_error", "docker_timeout"])
+@pytest.mark.parametrize("failure", ["kill_error", "wait_timeout", "wait_error", "docker_error", "docker_timeout",
+                                     "wait_unexpected", "docker_decode", "docker_unexpected"])
 def test_unconfirmed_cleanup_blocks_reuse_and_always_attempts_container_cleanup(tmp_path, monkeypatch, failure):
     row, args = coverage_sample(tmp_path, monkeypatch)
     commands = []
@@ -191,6 +204,10 @@ def test_unconfirmed_cleanup_blocks_reuse_and_always_attempts_container_cleanup(
     class FakeProcess:
         pid = 12345
         first = True
+        killed = []
+
+        def kill(self):             # procutil.kill_group's fallback when the group kill fails
+            self.killed.append(self.pid)
 
         def wait(self, timeout):
             if self.first:
@@ -200,22 +217,28 @@ def test_unconfirmed_cleanup_blocks_reuse_and_always_attempts_container_cleanup(
                 raise subprocess.TimeoutExpired("bash", timeout)
             if failure == "wait_error":
                 raise OSError("wait failed")
+            if failure == "wait_unexpected":     # round 6 (V2): not only SubprocessError / OSError
+                raise ValueError("wait failed unexpectedly")
             return 0
 
     def killpg(*args):
         if failure == "kill_error":
             raise PermissionError("kill failed")
 
-    def docker(cmd, **kwargs):
+    def docker(cmd, timeout, **kwargs):
         commands.append(cmd)
-        assert kwargs["timeout"] == run_local.CLEANUP_TIMEOUT
+        assert timeout == run_local.CLEANUP_TIMEOUT
         if failure == "docker_timeout":
-            raise subprocess.TimeoutExpired(cmd, kwargs["timeout"])
+            raise subprocess.TimeoutExpired(cmd, timeout)
+        if failure == "docker_decode":       # round 6 (V2): what text=True without errors='replace' raised
+            raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+        if failure == "docker_unexpected":
+            raise ValueError("unexpected")
         return subprocess.CompletedProcess(cmd, int(failure == "docker_error"), stdout="", stderr="unavailable")
 
     monkeypatch.setattr(run_local.subprocess, "Popen", lambda *a, **kw: FakeProcess())
     monkeypatch.setattr(run_local.os, "killpg", killpg)
-    monkeypatch.setattr(run_local.subprocess, "run", docker)
+    monkeypatch.setattr(procutil, "run_group", docker)
     out = tmp_path / "out"
     assert run_local.run_sample(row, args, out) == 124
     wd = out / "R1" / "S1"
@@ -224,6 +247,9 @@ def test_unconfirmed_cleanup_blocks_reuse_and_always_attempts_container_cleanup(
     assert commands == [["docker", "rm", "--force", container]]
     assert "cleanup not confirmed" in (wd / "pipeline.log").read_text()
     assert "process group 12345" in (wd / "pipeline.log").read_text()
+    if failure == "kill_error":        # the shell itself is still killed, but the group is not confirmed
+        assert FakeProcess.killed == [12345]
+        assert "Process-group cleanup not confirmed: killpg(12345) failed" in (wd / "pipeline.log").read_text()
     (wd / "evidence").write_text("preserve")
 
     def must_not_start(*args, **kwargs):
@@ -236,11 +262,130 @@ def test_unconfirmed_cleanup_blocks_reuse_and_always_attempts_container_cleanup(
     assert "Refusing to reuse" in (wd / "pipeline.log").read_text()
 
 
+def test_invalid_utf8_from_docker_is_unconfirmed_cleanup_with_the_marker(tmp_path, monkeypatch):
+    # round 6 (V2): a real `docker` on PATH (no run_group mock) whose `rm` fails with invalid UTF-8 on stderr: the
+    # harness reports unconfirmed cleanup and writes its marker, instead of UnicodeDecodeError escaping the cleanup
+    row, args = coverage_sample(tmp_path, monkeypatch)
+    bin_dir = tmp_path / "docker-bin"
+    bin_dir.mkdir()
+    (bin_dir / "docker").write_text("#!/bin/sh\nprintf 'daemon \\377\\376 unavailable\\n' >&2\nexit 1\n")
+    (bin_dir / "docker").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+    class FakeProcess:
+        pid = 12345
+        calls = 0
+
+        def wait(self, timeout):
+            FakeProcess.calls += 1
+            if FakeProcess.calls == 1:
+                raise subprocess.TimeoutExpired("bash", timeout)
+            return 0
+
+    real_popen = subprocess.Popen     # the same module object procutil uses: fake only the pipeline's shell
+
+    def popen(cmd, *a, **kw):
+        return FakeProcess() if cmd[0] == "bash" else real_popen(cmd, *a, **kw)
+    monkeypatch.setattr(run_local.subprocess, "Popen", popen)
+    monkeypatch.setattr(run_local.os, "killpg", lambda *a: None)
+    out = tmp_path / "out"
+    assert run_local.run_sample(row, args, out) == 124
+    wd = out / "R1" / "S1"
+    container = (wd / ".cleanup-unconfirmed").read_text().strip()
+    log = (wd / "pipeline.log").read_text()
+    assert f"Container cleanup not confirmed for {container}: docker rm --force {container}: exit 1: daemon" in log
+    assert "\ufffd" in log
+
+
 def test_cleanup_missing_docker_is_unconfirmed(monkeypatch):
     def missing(*args, **kwargs):
         raise FileNotFoundError("docker")
 
-    monkeypatch.setattr(run_local.subprocess, "run", missing)
+    monkeypatch.setattr(procutil, "run_group", missing)
     log = io.StringIO()
     assert not run_local.stop_container("cnvkit-harness-test", log)
     assert "cleanup not confirmed" in log.getvalue()
+
+
+# round 5 (U3): the harness keeps every cleanup diagnostic, and accepts a container that is already gone
+
+def test_stop_container_accepts_an_already_removed_container(monkeypatch):
+    # `docker run --rm`: a container that exited on its own is gone; that is confirmed, not a reason for a marker
+    monkeypatch.setattr(procutil, "run_group", lambda cmd, timeout, **kw: subprocess.CompletedProcess(
+        cmd, 1, stdout="", stderr=f"Error response from daemon: No such container: {cmd[-1]}\n"))
+    log = io.StringIO()
+    assert run_local.stop_container("cnvkit-harness-test", log)
+    assert "Removed timed-out container cnvkit-harness-test" in log.getvalue()
+
+
+def test_stop_container_timeout_keeps_stderr_and_cleanup_notes(monkeypatch):
+    def hung(cmd, timeout, **kwargs):
+        e = subprocess.TimeoutExpired(cmd, timeout, stderr=b"daemon slow\n")
+        e.cleanup_notes = ["killpg(7) failed: PermissionError()"]
+        raise e
+    monkeypatch.setattr(procutil, "run_group", hung)
+    log = io.StringIO()
+    assert not run_local.stop_container("cnvkit-harness-test", log)
+    text = log.getvalue()
+    assert "Container cleanup not confirmed for cnvkit-harness-test" in text and "timed out after" in text
+    assert procutil.UNCONFIRMED in text and "stderr: daemon slow" in text and "killpg(7) failed" in text
+
+
+def test_bed_failure_report_keeps_the_cleanup_notes(tmp_path, monkeypatch):
+    # the reviewer's case: a timed-out BED download whose group kill is unconfirmed must say so in the report
+    monkeypatch.setattr(run_local, "HARNESS", tmp_path)
+    monkeypatch.setattr(run_local, "local_samples", lambda: [{"run": "R1", "sample": "S1"}])
+    monkeypatch.setattr(run_local, "treated_male_log", lambda *args: {})
+
+    def download(cmd, timeout, **kwargs):
+        e = subprocess.TimeoutExpired(cmd, timeout)
+        e.cleanup_notes = ["process 7 (or a descendant holding its output) still running after the kill and 10 s"]
+        raise e
+    monkeypatch.setattr(run_local, "run_group", download)
+    monkeypatch.setattr(run_local, "run_sample", lambda *a: pytest.fail("a worker started"))
+    assert run_local.main(["--data", "nonumi", "--start-from", "bam", "--label", "test"]) == 1
+    with (tmp_path / "test" / "report.tsv").open() as fh:
+        detail = next(csv.DictReader(fh, delimiter="\t"))["detail"]
+    assert detail.startswith("shared BED download failed: Command ")
+    assert procutil.UNCONFIRMED in detail and "still running after the kill" in detail
+
+
+# round 7 (W3): an unexpected exception from the group kill is unconfirmed cleanup, reported in the log; the timeout
+# is still exit 124 (a FAIL in the report), the container removal is attempted and the marker written
+
+@pytest.mark.parametrize("error", [ValueError("kill bookkeeping failed"), TypeError("bad pid"), RuntimeError("x")])
+def test_an_unexpected_group_kill_failure_keeps_exit_124_and_the_marker(tmp_path, monkeypatch, error):
+    row, args = coverage_sample(tmp_path, monkeypatch)
+    commands = []
+
+    class FakeProcess:
+        pid = 12345
+        waits = 0
+
+        def wait(self, timeout):
+            FakeProcess.waits += 1
+            if FakeProcess.waits == 1:
+                raise subprocess.TimeoutExpired("bash", timeout)
+            return 0
+
+    def kill(proc):
+        raise error
+
+    def docker(cmd, timeout, **kwargs):
+        commands.append(cmd)
+        return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(run_local.subprocess, "Popen", lambda *a, **kw: FakeProcess())
+    monkeypatch.setattr(run_local, "kill_group", kill)
+    monkeypatch.setattr(procutil, "run_group", docker)
+    out = tmp_path / "out"
+    assert run_local.run_sample(row, args, out) == 124
+    wd = out / "R1" / "S1"
+    container = (wd / ".cleanup-unconfirmed").read_text().strip()
+    assert commands == [["docker", "rm", "--force", container]]
+    log = (wd / "pipeline.log").read_text()
+    assert f"Process-group cleanup not confirmed: killing process group 12345 failed: {error!r}" in log
+    assert f"Removed timed-out container {container}" in log
+    # and the harness reports it as a FAIL (exit 124), not a crash
+    assert run_local.check_sample(row, args, out, 124, {}) == [
+        ("S1", "pipeline", "FAIL", f"exit 124; see {wd / 'pipeline.log'}")]

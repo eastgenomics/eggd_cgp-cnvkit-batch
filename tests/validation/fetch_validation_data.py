@@ -30,6 +30,8 @@ from pathlib import Path
 
 PROJECT = "project-JF3p1f04Yggp0vf3PYjy7Q0F"
 REPO = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(REPO / "tests" / "unit"))
+from procutil import run_group  # noqa: E402 -- tests/unit is put on sys.path above (not a package)
 DATA = Path(os.environ.get("CNVKIT_VALIDATION_DATA", REPO / "tests" / ".data" / "validation"))
 DOWNLOADS = DATA / "_downloads"
 DOWNLOAD_TIMEOUT = 4 * 3600   # seconds per `dx download` (archives up to ~0.5 GB)
@@ -118,8 +120,9 @@ def download(name, fid):
     if not dest.exists():
         ref = f"{PROJECT}:{fid[5:]}" if fid.startswith("file:") else f"{PROJECT}:{fid}"
         print(f"  download {name}", flush=True)
-        subprocess.run(["dx", "download", "-f", ref, "-o", str(dest) + ".part"], check=True,
-                       stdout=subprocess.DEVNULL, timeout=DOWNLOAD_TIMEOUT)
+        # bounded in its own process group: on timeout dx and any child it started are killed
+        run_group(["dx", "download", "-f", ref, "-o", str(dest) + ".part"], DOWNLOAD_TIMEOUT, check=True,
+                  stdout=subprocess.DEVNULL)
         os.replace(str(dest) + ".part", dest)
     return dest
 
