@@ -73,6 +73,7 @@ def test_parfix_on_an_empty_segmentation(tmp_path, overlap):
                     "--parx", "grch38", cwd=tmp_path)
     assert decide.returncode == 0 and decide.stdout.startswith("1\t"), decide.stderr
     shift = script("cnvkit_parfix.py", "shift", f"{s}.cnr", f"{s}.call.cns", "parfix", cwd=tmp_path)
+    assert shift.returncode == 0, shift.stderr
     assert shift.stdout.strip() == ("par_bins=8 span_bins=1" if overlap else "par_bins=6 span_bins=0") + \
         " par_segs=0 span_segs=0", shift.stderr
     in_image(tmp_path / "parfix", [["cnvkit.py", "genemetrics", f"{s}.cnr", "-s", f"{s}.call.cns", *GM,
