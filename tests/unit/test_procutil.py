@@ -175,6 +175,31 @@ def test_interrupt_cleanup_failure_is_noted_without_masking(monkeypatch):
     assert e.value.__notes__ == e.value.cleanup_notes
 
 
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_a_cleanup_interrupt_keeps_the_notes_and_closes_the_pipes(monkeypatch, interrupted):
+    # PR #6 (CodeRabbit): a BaseException raised by cleanup() itself (here a Ctrl-C during it) must not skip the
+    # annotation of the exception in flight or the closing of the pipes
+    exc = KeyboardInterrupt()
+    if interrupted:
+        interrupt_once(monkeypatch, exc)
+    started = []
+    real_popen = subprocess.Popen
+
+    def popen(*a, **kw):
+        started.append(real_popen(*a, **kw))
+        return started[-1]
+    monkeypatch.setattr(subprocess, "Popen", popen)
+
+    def cleanup():
+        raise KeyboardInterrupt("cleanup interrupted")
+    with pytest.raises(KeyboardInterrupt, match="cleanup interrupted") as e:
+        run_group(["sleep", "300"], 60 if interrupted else 1, cleanup=cleanup, capture_output=True)
+    original = e.value.__context__
+    assert original is exc if interrupted else isinstance(original, subprocess.TimeoutExpired)
+    assert original.cleanup_notes == [] and original.close_notes == []
+    assert started[0].stdout.closed and started[0].stderr.closed and started[0].poll() is not None
+
+
 def test_interrupt_with_an_unkillable_leader_is_bounded(tmp_path, monkeypatch):
     def denied(*a):
         raise PermissionError(1, "Operation not permitted")

@@ -89,6 +89,25 @@ def test_docker_check_with_only_a_pipe_close_note_still_skips(conftest, monkeypa
     assert procutil.UNCONFIRMED not in reason
 
 
+def test_docker_check_with_an_oserror_and_unconfirmed_cleanup_fails(conftest, monkeypatch):
+    # PR #6 (CodeRabbit): run_group notes an unconfirmed cleanup on any exception while waiting, OSError included
+    def raise_oserror(cmd, t, **kwargs):
+        e = OSError(5, "Input/output error")
+        e.cleanup_notes = [NOTE]
+        raise e
+    monkeypatch.setattr(conftest, "run_group", raise_oserror)
+    action, reason = conftest.docker_check.__wrapped__("cgp-cnvkit:1.0.0")
+    assert action == "fail" and reason.startswith("docker not runnable: ") and procutil.UNCONFIRMED in reason
+
+
+def test_docker_check_with_a_plain_oserror_skips(conftest, monkeypatch):
+    def raise_oserror(cmd, t, **kwargs):
+        raise PermissionError(13, "Permission denied")
+    monkeypatch.setattr(conftest, "run_group", raise_oserror)
+    action, reason = conftest.docker_check.__wrapped__("cgp-cnvkit:1.0.0")
+    assert action == "skip" and reason.startswith("docker not runnable: ") and procutil.UNCONFIRMED not in reason
+
+
 def test_docker_check_missing_image_skips_with_stderr(conftest, monkeypatch):
     monkeypatch.setattr(conftest, "run_group", lambda cmd, t, **kw: subprocess.CompletedProcess(
         cmd, 1, stdout="[]", stderr="Error: No such image: cgp-cnvkit:1.0.0\n"))

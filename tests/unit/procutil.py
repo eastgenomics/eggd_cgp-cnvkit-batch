@@ -160,9 +160,11 @@ def run_group(cmd, timeout, cleanup=None, check=False, **kwargs):
             except Exception as e:  # noqa: BLE001 -- noted on the TimeoutExpired raised below, never in its place
                 notes.append(f"collecting the output of process {proc.pid} after the kill failed: {e!r}")
         finally:
-            _run_cleanup(cleanup, notes)
-            _annotate(exc, notes)
-            _close_pipes(proc, exc)
+            try:
+                _run_cleanup(cleanup, notes)
+            finally:    # a BaseException from cleanup (e.g. KeyboardInterrupt) must not drop the notes (PR #6)
+                _annotate(exc, notes)
+                _close_pipes(proc, exc)
         raise
     except BaseException as exc:    # e.g. KeyboardInterrupt: do not leave the group, or its container, running
         notes = []
@@ -175,9 +177,11 @@ def run_group(cmd, timeout, cleanup=None, check=False, **kwargs):
             except Exception as e:  # noqa: BLE001 -- noted on the interrupting exception, never in its place
                 notes.append(f"waiting for process {proc.pid} after the kill failed: {e!r}")
         finally:
-            _run_cleanup(cleanup, notes)
-            _annotate(exc, notes)
-            _close_pipes(proc, exc)
+            try:
+                _run_cleanup(cleanup, notes)
+            finally:    # a BaseException from cleanup (e.g. KeyboardInterrupt) must not drop the notes (PR #6)
+                _annotate(exc, notes)
+                _close_pipes(proc, exc)
         raise
     result = subprocess.CompletedProcess(cmd, proc.returncode, out, err)
     if check:

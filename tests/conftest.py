@@ -28,8 +28,8 @@ def docker_check(image=IMAGE):
     except subprocess.TimeoutExpired as e:
         return "fail" if cleanup_unconfirmed(e) else "skip", timed_out(f"docker image inspect {image}",
                                                                          DOCKER_CHECK_TIMEOUT, e)
-    except OSError as e:
-        return "skip", f"docker not runnable: {failure_text(e)}"
+    except OSError as e:    # run_group notes an unconfirmed cleanup on it too (PR #6)
+        return "fail" if cleanup_unconfirmed(e) else "skip", f"docker not runnable: {failure_text(e)}"
     if proc.returncode == 0:
         return None, None
     err = proc.stderr.strip()[-300:]
