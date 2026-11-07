@@ -142,6 +142,7 @@ def extract(tar_path, rules):
 
 
 def main(which):
+    """Fetch, verify and extract the validation data for `which` (umi, nonumi or all); exit non-zero on any mismatch."""
     print(f"validation data -> {DATA}")
     failures = []
     for group, name, fid, _, target in SOURCES:
