@@ -51,7 +51,7 @@ jobs:
             -lll -f sarif -o bandit.sarif
       - name: Upload bandit SARIF to Security tab
         if: always()
-        continue-on-error: true  # SARIF upload requires GitHub Advanced Security
+        continue-on-error: true  # best effort: an upload failure (e.g. code scanning off) never blocks the job
         uses: github/codeql-action/upload-sarif@17a820bf2e43b47be2c72b39cc905417bc1ab6d0  # v3.28.6
         with:
           sarif_file: bandit.sarif
