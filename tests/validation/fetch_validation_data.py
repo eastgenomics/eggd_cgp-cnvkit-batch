@@ -178,7 +178,7 @@ def main(which):
             checked += 1
         print(f"  {listing.relative_to(DATA)}: {checked} members checked")
     controlled = DATA / "pon" / "atlas_cnvkit_static_pon_cgp_hg38_v1.0.0.cnn"
-    if controlled.exists() and hashlib.md5(controlled.read_bytes()).hexdigest() != "b4a373729d9282ce0a0ed80fd29f6d0a":
+    if controlled.exists() and hashlib.md5(controlled.read_bytes(), usedforsecurity=False).hexdigest() != "b4a373729d9282ce0a0ed80fd29f6d0a":
         failures.append("controlled PoN md5 differs from b4a373729d9282ce0a0ed80fd29f6d0a")
     if failures:
         sys.exit("FAILED:\n  " + "\n  ".join(failures))
