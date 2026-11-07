@@ -27,6 +27,9 @@ Runs the validated Atlas CGP configuration (`D_gcclip_on_s2` with the dropout ma
 - Outputs `genemetrics_noparfix`, `sex_qc`, `sex_check_mqc`, `dropout_qc`, `target_coverage` (DI-4104)
 - Tests: static checks, unit tests, command-line contract tests (CI), equivalence tests against the validation on
   226 sequencings and a local harness with the real image
+- CI: actions pinned to commit SHAs, workflow-level read-only permissions and job timeouts; the test requirements
+  hash-locked (`pytest` 9.0.3, for PYSEC-2026-1845); a `security` job on every push and PR, as in
+  eggd_publish_html: bandit (fails on HIGH severity) and pip-audit (fails on any finding), with hash-locked tools
 
 ### Deprecated
 - `purity`, `ploidy`: ignored with a warning; the `ploidy` default of 2 is removed (DI-4121)
