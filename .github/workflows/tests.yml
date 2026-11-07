@@ -58,6 +58,9 @@ jobs:
       - name: Run pip-audit (CVE scan) — fail on any finding
         if: always()
         # the app's bundled scripts are standard-library Python: the test and CI tool locks are its only dependencies
+        # every lock is audited, so one lock's findings never hide another's; any finding fails the step
         run: |
-          pip-audit --require-hashes --disable-pip -r requirements-test.txt
-          pip-audit --require-hashes --disable-pip -r ci/requirements-security.txt
+          status=0
+          pip-audit --require-hashes --disable-pip -r requirements-test.txt || status=1
+          pip-audit --require-hashes --disable-pip -r ci/requirements-security.txt || status=1
+          exit "$status"
