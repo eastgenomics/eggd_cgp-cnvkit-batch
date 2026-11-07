@@ -155,10 +155,6 @@ All samples can run in parallel (one job per sample).
 
 ## Known limitations
 
-- **PAR check warns only:** when the PAR post-step cannot explain a PAR gene row (`par_check 0` in the job log),
-  the job still publishes the re-run `genemetrics`. Treat a `par_check 0` warning in a male sample as a failed PAR
-  correction and do not report its PAR genes (e.g. CRLF2) without review
-  ([#7](https://github.com/eastgenomics/eggd_cgp-cnvkit-batch/issues/7)).
 - **CRLF2 in males:** when CBS merges the PAR1 bins into a segment that continues into non-PAR chrX, the PAR
   post-step leaves it unchanged, and the PAR gene keeps the +1 shift (`par_span_segments` > 0, logged). Review every
   male CRLF2 call.
@@ -176,7 +172,7 @@ All samples can run in parallel (one job per sample).
 ## Testing
 
 ```bash
-python3 -m venv .venv && .venv/bin/python -m pip install --require-hashes -r requirements-test.txt   # hash-locked
+python3.12 -m venv .venv && .venv/bin/python -m pip install --require-hashes -r requirements-test.txt   # hash-locked for 3.12
 .venv/bin/python -m pytest -m "static or unit or pipeline"     # L0–L2: no Docker, data or DNAnexus (CI)
 tests/validation/fetch_validation_data.py all                  # ~3 GB, pinned by file ID and sha256
 .venv/bin/python -m pytest -m validation                       # L3 + L4: needs Docker and cgp-cnvkit:1.0.0
