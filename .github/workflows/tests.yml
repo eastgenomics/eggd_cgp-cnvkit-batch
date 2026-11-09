@@ -64,3 +64,8 @@ jobs:
           pip-audit --require-hashes --disable-pip -r requirements-test.txt || status=1
           pip-audit --require-hashes --disable-pip -r ci/requirements-security.txt || status=1
           exit "$status"
+      - name: Run zizmor (GitHub Actions workflow security) — fail on any finding
+        if: always()
+        # offline: no token needed (zizmor's online-only audits are skipped); --strict-collection fails on a malformed
+        # workflow instead of skipping it
+        run: zizmor --offline --strict-collection .github/workflows/

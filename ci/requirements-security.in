@@ -1,5 +1,7 @@
-# CI security tools, as in eggd_publish_html (bandit SAST, pip-audit CVE scan).
+# CI security tools: bandit SAST and pip-audit CVE scan (as in eggd_publish_html), zizmor workflow audit (as in
+# eggd_purple-plotter).
 # Lock: uv pip compile --generate-hashes --python-version 3.12 --python-platform x86_64-manylinux_2_28 ci/requirements-security.in -o ci/requirements-security.txt
 bandit==1.9.4
 bandit-sarif-formatter==1.1.1
 pip-audit==2.10.1
+zizmor==1.32.0
