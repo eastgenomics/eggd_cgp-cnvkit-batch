@@ -172,7 +172,7 @@ All samples can run in parallel (one job per sample).
 ## Testing
 
 ```bash
-python3 -m venv .venv && uv pip install --python .venv/bin/python -r requirements-test.txt
+python3.12 -m venv .venv && .venv/bin/python -m pip install --require-hashes -r requirements-test.txt   # hash-locked for 3.12
 .venv/bin/python -m pytest -m "static or unit or pipeline"     # L0–L2: no Docker, data or DNAnexus (CI)
 tests/validation/fetch_validation_data.py all                  # ~3 GB, pinned by file ID and sha256
 .venv/bin/python -m pytest -m validation                       # L3 + L4: needs Docker and cgp-cnvkit:1.0.0

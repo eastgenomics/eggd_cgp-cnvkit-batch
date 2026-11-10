@@ -1,29 +1,71 @@
 name: tests
 
-# L0–L2: static checks, unit tests and argv-contract tests.
-# No Docker, validation data or DNAnexus access needed; L3–L6 run manually.
+# L0–L2: static checks, unit tests and argv-contract tests, plus the PR security scans (bandit, pip-audit) used in
+# eggd_publish_html. No Docker, validation data or DNAnexus access needed; L3–L6 run manually.
 on:
   push:
   pull_request:
 
+# Least privilege: every job reads the repo only, unless it widens this itself (security).
+permissions:
+  contents: read  # checkout only
+
 jobs:
   test:
     runs-on: ubuntu-24.04
-    permissions:
-      contents: read
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
         with:
           python-version: "3.12"
       - name: Install shellcheck and test dependencies
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q shellcheck
-          python -m pip install uv
-          uv pip install --system -r requirements-test.txt
+          python -m pip install --require-hashes -r requirements-test.txt  # hash-locked (uv pip compile)
       - name: Validate dxapp.json
         run: python -m json.tool dxapp.json > /dev/null
       - name: Run L0–L2
         run: python -m pytest -m "static or unit or pipeline"
+
+  security:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read  # checkout
+      security-events: write  # upload the bandit SARIF to the Security tab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0  # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Install security tools
+        run: python -m pip install --require-hashes -r ci/requirements-security.txt  # hash-locked
+      - name: Run bandit (SAST) — fail on HIGH severity findings
+        run: |
+          bandit -r resources/usr/local/bin/ tests/ \
+            -lll -f sarif -o bandit.sarif
+      - name: Upload bandit SARIF to Security tab
+        if: always()
+        continue-on-error: true  # best effort: an upload failure (e.g. code scanning off) never blocks the job
+        uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066  # v4.39.3
+        with:
+          sarif_file: bandit.sarif
+      - name: Run pip-audit (CVE scan) — fail on any finding
+        if: always()
+        # the app's bundled scripts are standard-library Python: the test and CI tool locks are its only dependencies
+        # every lock is audited, so one lock's findings never hide another's; any finding fails the step
+        run: |
+          status=0
+          pip-audit --require-hashes --disable-pip -r requirements-test.txt || status=1
+          pip-audit --require-hashes --disable-pip -r ci/requirements-security.txt || status=1
+          exit "$status"
+      - name: Run zizmor (GitHub Actions workflow security) — fail on any finding
+        if: always()
+        # offline: no token needed (zizmor's online-only audits are skipped); --strict-collection fails on a malformed
+        # workflow instead of skipping it
+        run: zizmor --offline --strict-collection .github/workflows/
