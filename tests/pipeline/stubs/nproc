@@ -1,0 +1,3 @@
+#!/bin/sh
+# Test stub: a fixed CPU count, so --processes is deterministic in the recorded command lines.
+echo "${STUB_NPROC:-4}"

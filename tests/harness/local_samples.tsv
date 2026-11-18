@@ -1,0 +1,17 @@
+run	sample	lims_sex	cn_reference	expected_treated_male	expected_par_check	expected_chrY_sex	purpose
+0797_V2	140609591-25328S0023-26CGPV2-8475-M-96770770	M	D_GC__minus__25328S0023__140609591__gcclip__parx	1	1	Male	male; post-step changes CRLF2
+0811_V3	143692786-26149S0086-26CGPV3-8475-M-96770770	M	D_GC__minus__26149S0086__143692786__gcclip__parx	1	span	Male	male; CRLF2 segment spans PAR1 (known limitation)
+0797_V2	141998816-26049S0042-26CGPV2-8471-M-96770770	M	D_GC__minus__26049S0042__141998816__gcclip__parx	1	span	Male	male; .cnr sex Female, -x male wins; span
+0811_V3	132492737-24260S0018-26CGPV3-8473-M-96770770	M	D_GC__minus__24260S0018__132492737__gcclip__parx	1	1	Male	male; dropout mask changes calls (+3 genes)
+0811_V3	143361085-26127S0031-26CGPV3-8471-M-96770770	M	D_GC__minus__26127S0031__143361085__gcclip__parx	1	1	Male	XXY; .cnr sex Female; post-step via -x male
+0786_V1	138076232-25178S0009-26CGPV1-9197-F-96770770	F	D_GC__minus__25178S0009__138076232__gcclip__parx	0	-	Female	female
+0786_V1	138984325-25232S0037-26CGPV1-9197-F-96770770	F	D_GC__minus__25232S0037__138984325__gcclip__parx	0	-	Female	female; .cnr sex Male, -x female wins (no post-step)
+0797_V2	140558752-25325S0076-26CGPV2-8471-F-96770770	F	D_GC__minus__25325S0076__140558752__gcclip__parx	0	-	Female	female
+0811_V3	142481246-26076S0032-26CGPV1-9197-F-96770770	F	D_GC__minus__26076S0032__142481246__gcclip__parx	0	-	Female	female (v2.0.x equivalence-test sample)
+0734_Val1_50kb	135024088-25021S0072-26CGPVal1SHv150kb-9999-U-1111	U	D_GC__shared__gcclip__parx	1	1	Male	LIMS U; inferred Male; post-step via inference
+0734_Val1_50kb	140611013-25330S0099-26CGPVal1SHv150kb-9999-U-1111	U	D_GC__shared__gcclip__parx	1	span	Female	LIMS U; .cnr Male but chrY absent; post-step; span
+0734_Val1_50kb	135655622-25050S0022-26CGPVal1SHv150kb-9999-U-1111	U	D_GC__shared__gcclip__parx	0	-	Female	LIMS U; inferred Female (v2.0.0 test sample)
+0734_Val1_50kb	140604877-25330S0048-26CGPVal1SHv150kb-9999-U-1111	U	D_GC__shared__gcclip__parx	0	-	Female	LIMS U; dropout mask (ETV6) changes calls (+14 genes)
+0734_Val1_50kb	140604687-25330S0044-26CGPVal1SHv150kb-9999-U-1111	U	D_GC__shared__gcclip__parx	0	-	Female	LIMS U; dropout mask removes FGFR3 call
+0734_Val1_50kb	140611223-25330S0104-26CGPVal1SHv150kb-9999-U-1111	U	D_GC__shared__gcclip__parx	0	-	Female	LIMS U; QC-failed library, 2,091 masked bins
+0734_Val1_50kb	140601286-25330S0024-26CGPVal1SHv150kb-9999-U-1111	U	D_GC__minus__25330S0024__140601286__gcclip__parx	0	-	Female	LIMS U; PoN member (leave-out PoN)
